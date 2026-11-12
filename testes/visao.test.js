@@ -90,3 +90,12 @@ test('Apps Script: com a cota do Flash-Lite esgotada, tenta o 3.8 Flash', () => 
   assert.equal(r.modelo, 'gemini-3.8-flash');
   assert.equal(chamadas.filter((u) => u.includes(':generateContent')).length, 2);
 });
+
+test('extra pelo Gemini vira o nome da coluna Extra; sem o campo, fica para a análise da imagem', () => {
+  assert.equal(normalizarLeitura({ extra: 'Reverse Foil' }).extraGemini, 'Reverse Foil');
+  assert.equal(normalizarLeitura({ extra: 'Poké Ball Foil' }).extraGemini, 'Pokeball Foil');
+  assert.equal(normalizarLeitura({ extra: 'master ball' }).extraGemini, 'Master Ball');
+  assert.equal(normalizarLeitura({ extra: 'Normal' }).extraGemini, 'Normal');
+  assert.equal(normalizarLeitura({ extra: '' }).extraGemini, '', 'não deu para ver o brilho');
+  assert.equal(normalizarLeitura({ nome: 'X' }).extraGemini, undefined, 'intermediário antigo, sem o campo');
+});

@@ -1,7 +1,7 @@
 // pokescan · Copyright © 2026 Rafaela Cardoso · PolyForm Noncommercial 1.0.0
 // Service worker: permite instalar o app e abrir a tela sem internet.
 // Rede primeiro (sempre a versão mais nova); o cache só é usado quando não há conexão.
-const CACHE = 'pokescan-v13';
+const CACHE = 'pokescan-v14';
 const ARQUIVOS = [
   './', 'index.html', 'estilo.css', 'manifest.webmanifest',
   'icones/icone-192.png', 'icones/icone-512.png', 'icones/icone-maskable-192.png', 'icones/icone-maskable-512.png',

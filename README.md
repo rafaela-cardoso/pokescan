@@ -84,7 +84,9 @@ tenta de novo; **Descartar pendentes** apaga as que ainda não foram gravadas (a
 
 O OCR (tesseract.js) lê letra por letra e erra fácil com brilho, arte por trás do texto ou fotos grandes. Com a
 opção **Configurar → Ler a carta com o Gemini** (ligada por padrão), a foto recortada vai para o Gemini, que devolve
-nome, número, total, sigla da coleção e idioma. O resto (busca na Liga, filtros, link) é o mesmo. Sem login Google,
+nome, número, total, sigla da coleção, idioma e o extra (Normal, Foil, Reverse Foil, Pokeball Foil ou Master Ball,
+pelo brilho visível na foto; o extra vem como sugestão para conferir). Quando o Gemini não consegue ver o brilho, o
+extra é sugerido pela análise da imagem (seção "Extras pela imagem"). O resto (busca na Liga, filtros, link) é o mesmo. Sem login Google,
 sem intermediário, sem internet ou com a cota esgotada, o app volta sozinho para o OCR e diz isso no resumo.
 
 Usa a **cota gratuita da API do Gemini** (Google AI Studio), que é separada da assinatura do Gemini. A chave fica
@@ -103,6 +105,9 @@ Passo a passo (uma vez):
    - `MODELO_GEMINI` (opcional): outro modelo do Gemini. O padrão está no início do script.
 4. **Implantar → Gerenciar implantações → editar (lápis) → Versão: Nova versão → Implantar**. A URL continua a
    mesma, e o app já usa.
+
+Sempre que `proxy/AppsScript_imagens.gs` mudar (por exemplo, quando o extra passou a ser pedido ao Gemini), repita os
+passos 2 e 4: cole o código novo e publique uma nova versão. As propriedades do script continuam lá.
 
 Os limites da cota grátis (pedidos por minuto e por dia) aparecem em
 [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
