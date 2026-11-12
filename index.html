@@ -1,0 +1,174 @@
+<!doctype html>
+<!-- pokescan · Copyright © 2026 Rafaela Cardoso · PolyForm Noncommercial 1.0.0 · https://github.com/rafaela-cardoso/pokescan -->
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161c">
+  <meta name="description" content="Leia cartas com a câmera do celular e grave na sua planilha do Google Sheets.">
+  <title>pokescan</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icone.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icone.svg">
+  <link rel="stylesheet" href="estilo.css">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js" defer></script>
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <header class="topo">
+    <h1>pokescan</h1>
+    <button id="destino" class="destino" type="button">Escolher planilha</button>
+    <button id="abrirAjustes" class="icone-btn" type="button" aria-label="Configurar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.5a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L14.9 3h-3.8l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h3.8l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6Z"/></svg>
+    </button>
+  </header>
+
+  <main id="telaScanner">
+    <section class="palco" id="palco">
+      <video id="video" playsinline muted></video>
+      <div id="moldura" class="moldura" aria-hidden="true">
+        <span class="faixa faixa-nome"></span>
+        <span class="faixa faixa-numero"></span>
+      </div>
+      <div id="semCamera" class="sem-camera" hidden>
+        <p id="semCameraMsg">Toque em <strong>Ligar câmera</strong> para começar.</p>
+        <button id="ligarCamera" class="btn primario" type="button">Ligar câmera</button>
+      </div>
+      <p id="dica" class="dica">Encaixe a carta na moldura, com o nome no topo</p>
+      <div id="lendo" class="lendo" hidden>
+        <div class="barra"><span id="barraProgresso"></span></div>
+        <p id="lendoMsg">Lendo a carta…</p>
+      </div>
+    </section>
+
+    <nav class="controles">
+      <label class="btn secundario" for="arquivo">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg>
+        Galeria
+        <input id="arquivo" type="file" accept="image/*" hidden>
+      </label>
+      <button id="ler" class="disparo" type="button" aria-label="Ler carta"><span></span></button>
+      <button id="lanterna" class="btn secundario" type="button" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6l-1 7h4l-8 13 1-9H7z"/></svg>
+        Luz
+      </button>
+      <span id="espacoLanterna" class="espaco"></span>
+    </nav>
+
+    <section id="resultado" class="resultado" hidden>
+      <div class="resultado-topo">
+        <canvas id="miniatura" class="miniatura" width="63" height="88"></canvas>
+        <img id="imagemCatalogo" class="miniatura" alt="Carta na Liga Pokémon" hidden>
+        <div class="resultado-resumo">
+          <p id="confianca" class="selo"></p>
+          <p id="resumo" class="resumo"></p>
+        </div>
+      </div>
+
+      <div class="campo" id="campoCandidatos" hidden>
+        <span>Na Liga Pokémon — toque na carta certa</span>
+        <div class="candidatos" id="candidatos" role="radiogroup" aria-label="Cartas encontradas na Liga"></div>
+      </div>
+
+      <label class="campo"><span>Nome</span><input id="nome" autocomplete="off"></label>
+      <div class="linha">
+        <label class="campo"><span>Número</span><input id="numero" autocomplete="off" inputmode="text"></label>
+        <label class="campo"><span>Total</span><input id="total" autocomplete="off" inputmode="text"></label>
+        <label class="campo curto"><span>Qtd.</span><input id="quantidade" type="number" min="1" value="1" inputmode="numeric"></label>
+      </div>
+      <a id="linkLiga" class="link-liga" target="_blank" rel="noopener" hidden>Ver preços desta carta na Liga Pokémon ↗</a>
+
+      <div class="campo">
+        <span>Idioma</span>
+        <div class="chips" id="chipsIdioma" role="radiogroup" aria-label="Idioma"></div>
+      </div>
+      <div class="campo">
+        <span>Estado</span>
+        <div class="chips" id="chipsEstado" role="radiogroup" aria-label="Estado"></div>
+      </div>
+      <label class="campo"><span>Extra</span><select id="extra"></select></label>
+
+      <div class="acoes">
+        <button id="descartar" class="btn secundario" type="button">Descartar</button>
+        <button id="buscarDeNovo" class="btn secundario" type="button">Buscar de novo na Liga</button>
+        <button id="salvar" class="btn primario" type="button">Gravar na planilha</button>
+      </div>
+      <details class="bruto">
+        <summary>Texto lido pelo OCR</summary>
+        <pre id="textoBruto"></pre>
+      </details>
+    </section>
+
+    <section class="historico">
+      <div class="historico-topo">
+        <h2>Gravadas</h2>
+        <button id="reenviar" class="btn pequeno" type="button" hidden>Enviar pendentes</button>
+      </div>
+      <ol id="listaHistorico"></ol>
+      <p id="historicoVazio" class="vazio">As cartas gravadas aparecem aqui.</p>
+    </section>
+  </main>
+
+  <main id="telaAjustes" hidden>
+    <section class="cartao">
+      <h2>Conta Google</h2>
+      <label class="campo">
+        <span>Client ID do Google (OAuth)</span>
+        <input id="clienteId" autocomplete="off" spellcheck="false" placeholder="000000000000-xxxx.apps.googleusercontent.com">
+      </label>
+      <p class="ajuda">Criado no Google Cloud Console (passo a passo no README). Só precisa ser informado uma vez.</p>
+      <div class="acoes">
+        <button id="entrar" class="btn primario" type="button">Entrar com Google</button>
+        <button id="sair" class="btn secundario" type="button" hidden>Sair</button>
+      </div>
+      <p id="statusConta" class="ajuda"></p>
+    </section>
+
+    <section class="cartao">
+      <h2>Planilha</h2>
+      <label class="campo">
+        <span>Link da planilha</span>
+        <input id="planilha" type="url" autocomplete="off" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/…">
+      </label>
+      <div class="acoes">
+        <button id="abrirPlanilha" class="btn secundario" type="button">Carregar abas</button>
+      </div>
+      <label class="campo">
+        <span>Aba</span>
+        <select id="aba"><option value="">— carregue as abas —</option></select>
+      </label>
+      <p id="statusPlanilha" class="ajuda">As cartas entram na primeira linha livre abaixo da última preenchida, só nas colunas
+        reconhecidas (Carta, Estado/Qualidade, Extra, Idioma, Link Liga, Quantidade, Data). Nada é sobrescrito.
+        Aba vazia: o cabeçalho é criado no formato do liga_price_sheets (que o bot de leilão também lê).</p>
+    </section>
+
+    <section class="cartao">
+      <h2>Leitura</h2>
+      <div class="campo">
+        <span>Estado padrão</span>
+        <div class="chips" id="chipsEstadoPadrao" role="radiogroup" aria-label="Estado padrão"></div>
+      </div>
+      <div class="campo">
+        <span>Idioma padrão</span>
+        <div class="chips" id="chipsIdiomaPadrao" role="radiogroup" aria-label="Idioma padrão"></div>
+      </div>
+      <label class="campo"><span>Extra padrão</span><select id="extraPadrao"></select></label>
+      <label class="campo"><span>Carta coreana detectada como</span>
+        <select id="coreano"><option value="KO">KO (código da Liga Pokémon)</option><option value="KR">KR</option></select></label>
+      <label class="campo">
+        <span>Intermediário de imagens (opcional)</span>
+        <input id="proxyImagens" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+      </label>
+      <p class="ajuda">Com ele, o app lê o idioma das cartas sugeridas pela Liga e tira as de outro idioma. Veja o README.</p>
+      <label class="opcao"><input id="nomeEmIngles" type="checkbox"> Gravar o nome em inglês (padrão: o nome da Liga, em português quando existe)</label>
+      <label class="opcao"><input id="salvarDireto" type="checkbox"> Gravar direto quando a leitura for confiável (sem revisar)</label>
+    </section>
+
+    <div class="acoes fim">
+      <button id="fecharAjustes" class="btn primario" type="button">Pronto</button>
+    </div>
+  </main>
+
+  <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

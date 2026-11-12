@@ -1,0 +1,26 @@
+# Segredos e credenciais (o Client ID não é segredo, mas chaves e contas de serviço são)
+.env
+.env.*
+credenciais*.json
+*service-account*.json
+*.pem
+*.key
+
+# Gerados
+_site/
+node_modules/
+npm-debug.log*
+
+# Sistema operacional e editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# imagens de teste locais
+_teste/
+
+# fotos de referência para calibrar (imagens de terceiros, ficam só no computador)
+referencias/

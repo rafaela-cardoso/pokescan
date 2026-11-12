@@ -1,0 +1,58 @@
+# CI do pokescan: testes a cada push; na branch main, publica o app no GitHub Pages.
+# Para ativar o Pages: Settings → Pages → Source: "GitHub Actions".
+# Opcional: Settings → Secrets and variables → Actions → Variables → POKESCAN_CLIENT_ID
+# (o Client ID do Google já vem preenchido no app publicado).
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: Checagens e testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Sintaxe dos arquivos
+        run: npm run checar
+      - name: Testes automatizados
+        run: npm test
+
+  publicar:
+    name: Publicar no GitHub Pages
+    needs: testes
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Montar o site
+        run: npm run site
+        env:
+          POKESCAN_CLIENT_ID: ${{ vars.POKESCAN_CLIENT_ID }}
+          POKESCAN_PROXY_IMAGENS: ${{ vars.POKESCAN_PROXY_IMAGENS }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,15 @@
+{
+  "name": "pokescan",
+  "short_name": "pokescan",
+  "description": "Leia cartas com a câmera e grave na sua planilha do Google Sheets.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14161c",
+  "theme_color": "#14161c",
+  "icons": [
+    { "src": "icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

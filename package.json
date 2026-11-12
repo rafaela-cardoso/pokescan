@@ -1,0 +1,19 @@
+{
+  "name": "pokescan",
+  "version": "1.0.0",
+  "description": "App (PWA) que lê cartas pela câmera do celular com OCR e grava numa planilha do Google Sheets à sua escolha",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/servidor.js",
+    "test": "node --test \"testes/*.test.js\"",
+    "checar": "node scripts/checar-sintaxe.js",
+    "site": "node scripts/montar-site.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "Rafaela Cardoso",
+  "homepage": "https://github.com/rafaela-cardoso/pokescan"
+}
