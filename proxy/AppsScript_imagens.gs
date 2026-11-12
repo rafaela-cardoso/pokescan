@@ -97,17 +97,23 @@ function doPost(e) {
     // cota de um modelo esgotada (429): tenta o próximo da lista
     const modelos = [props.getProperty('MODELO_GEMINI') || MODELO_PADRAO].concat(MODELOS_RESERVA)
       .filter(function (m, i, lista) { return lista.indexOf(m) === i; });
+    // 503/500 (Gemini sobrecarregado): espera e tenta de novo; cota esgotada (429) ou ainda sobrecarregado: próximo modelo
     let r, codigo, modelo;
     for (let i = 0; i < modelos.length; i++) {
       modelo = modelos[i];
-      r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modelo) + ':generateContent', {
-        method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': chave },
-        payload: JSON.stringify(corpo), muteHttpExceptions: true,
-      });
-      codigo = r.getResponseCode();
-      if (codigo !== 429) break;
+      for (let tentativa = 0; tentativa < 3; tentativa++) {
+        if (tentativa) Utilities.sleep(1500 * tentativa);
+        r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modelo) + ':generateContent', {
+          method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': chave },
+          payload: JSON.stringify(corpo), muteHttpExceptions: true,
+        });
+        codigo = r.getResponseCode();
+        if (codigo !== 503 && codigo !== 500) break;
+      }
+      if (codigo !== 429 && codigo !== 503 && codigo !== 500) break;
     }
-    if (codigo === 429) return json_({ ok: false, erro: 'Cota grátis do Gemini esgotada por agora.' });
+    if (codigo === 429) return json_({ ok: false, erro: 'Cota grátis do Gemini esgotada por agora.', temporario: true });
+    if (codigo === 503 || codigo === 500) return json_({ ok: false, erro: 'Gemini sobrecarregado (HTTP ' + codigo + ').', temporario: true });
     if (codigo !== 200) return json_({ ok: false, erro: 'Gemini: HTTP ' + codigo + ' ' + r.getContentText().slice(0, 200) });
     const resposta = JSON.parse(r.getContentText());
     const partes = (((resposta.candidates || [])[0] || {}).content || {}).parts || [];

@@ -55,6 +55,21 @@ function molduraNoVideo(video) {
   return { x: x0 + (visW - w) / 2, y: y0 + (visH - h) / 2, w, h, escala, x0, y0 };
 }
 
+// Miniatura em cinza da área da moldura (para a foto automática). Devolve Uint8Array largura*altura ou null.
+let telaMini = null;
+export function miniaturaDaMoldura(video, largura, altura) {
+  if (!video.videoWidth) return null;
+  const m = molduraNoVideo(video);
+  telaMini ??= document.createElement('canvas');
+  telaMini.width = largura; telaMini.height = altura;
+  const ctx = telaMini.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, m.x, m.y, m.w, m.h, 0, 0, largura, altura);
+  const d = ctx.getImageData(0, 0, largura, altura).data;
+  const cinza = new Uint8Array(largura * altura);
+  for (let p = 0; p < cinza.length; p++) cinza[p] = (d[p * 4] * 77 + d[p * 4 + 1] * 150 + d[p * 4 + 2] * 29) >> 8;
+  return cinza;
+}
+
 // Posiciona o elemento da moldura sobre o vídeo.
 export function posicionarMoldura(video, moldura) {
   if (!video.videoWidth) return;

@@ -63,21 +63,45 @@ export function normalizarLeitura(carta = {}, modelo = '') {
   };
 }
 
-// Manda a foto ao intermediário e devolve a leitura normalizada. Erros viram exceção (com .login quando o token
-// não vale mais).
-export async function lerComGemini(canvas, { proxy, token }) {
-  const r = await fetch(proxy, {
-    method: 'POST',
-    // text/plain: pedido "simples", sem a pré-consulta de CORS que o Apps Script não responde
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ acao: 'lerCarta', token, imagem: fotoParaEnvio(canvas) }),
-  });
-  if (!r.ok) throw new Error(`Gemini: HTTP ${r.status}`);
-  const d = await r.json();
-  if (!d.ok) {
-    const e = new Error(d.erro || 'Gemini: falhou');
-    e.login = !!d.login;
-    throw e;
+// Um pedido ao intermediário. Erros viram exceção: .login quando o token não vale mais, .temporario quando vale
+// tentar de novo (Gemini sobrecarregado, rede, cota por minuto).
+async function pedirLeitura(proxy, token, imagem) {
+  let r;
+  try {
+    r = await fetch(proxy, {
+      method: 'POST',
+      // text/plain: pedido "simples", sem a pré-consulta de CORS que o Apps Script não responde
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ acao: 'lerCarta', token, imagem }),
+    });
+  } catch (e) {
+    throw Object.assign(new Error(`sem conexão com o intermediário (${e.message})`), { temporario: true });
   }
-  return normalizarLeitura(d.carta, d.modelo);
+  if (!r.ok) throw Object.assign(new Error(`Gemini: HTTP ${r.status}`), { temporario: r.status >= 500 || r.status === 429 });
+  const d = await r.json();
+  if (!d.ok) throw Object.assign(new Error(d.erro || 'Gemini: falhou'), { login: !!d.login, temporario: !!d.temporario });
+  return d;
+}
+
+// Cota grátis do Flash-Lite: 15 pedidos por minuto. Na fila, as leituras saem uma depois da outra com essa folga.
+const INTERVALO_MINIMO = 4200;
+let ultimoPedido = 0;
+const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+// Manda a foto ao intermediário e devolve a leitura normalizada. Erro temporário (503, rede): espera e tenta de
+// novo, até 3 vezes no total; só depois disso o app desiste e usa o OCR.
+export async function lerComGemini(canvas, { proxy, token, esperas = [3000, 6000] }) {
+  const imagem = fotoParaEnvio(canvas);
+  for (let tentativa = 0; ; tentativa++) {
+    const falta = INTERVALO_MINIMO - (Date.now() - ultimoPedido);
+    if (falta > 0) await esperar(falta);
+    ultimoPedido = Date.now();
+    try {
+      const d = await pedirLeitura(proxy, token, imagem);
+      return normalizarLeitura(d.carta, d.modelo);
+    } catch (e) {
+      if (!e.temporario || tentativa >= esperas.length) throw e;
+      await esperar(esperas[tentativa]);
+    }
+  }
 }

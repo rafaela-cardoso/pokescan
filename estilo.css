@@ -1,36 +1,47 @@
 /* pokescan · Copyright © 2026 Rafaela Cardoso · PolyForm Noncommercial 1.0.0 */
 :root {
-  --fundo: #f4f5f8;
+  /* paleta: coral #F7A3A1 · pêssego #FFD0C9 · creme #FFF5F2 · lilás #D7B5D8 · ameixa #4C3A4D */
+  --fundo: #fff5f2;
   --superficie: #ffffff;
-  --texto: #171a21;
-  --suave: #5d6372;
-  --borda: #d9dce4;
-  --destaque: #e8473f;
-  --destaque-texto: #ffffff;
-  --bom: #1f8a4c;
-  --medio: #b26b00;
-  --ruim: #c0392b;
-  --palco: #0d0f14;
+  --texto: #4c3a4d;
+  --suave: #7a667b;
+  --borda: #f1d9d6;
+  --destaque: #f7a3a1;
+  --destaque-texto: #4c3a4d;
+  --destaque-forte: #a8505c; /* coral escurecido: texto e links legíveis sobre o fundo claro */
+  --suave-destaque: #ffd0c9;
+  --lilas: #d7b5d8;
+  --bom: #3b8a68;
+  --medio: #a8662a;
+  --ruim: #c2475e;
+  --palco: #4c3a4d;
+  --palco-texto: #fff5f2;
+  --palco-suave: #d7b5d8;
   --raio: 14px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --fundo: #14161c;
-    --superficie: #1d2029;
-    --texto: #eceef3;
-    --suave: #9aa1b2;
-    --borda: #2e3240;
-    --destaque: #ff5a4f;
-    --bom: #3ccf7e;
-    --medio: #f0a83a;
-    --ruim: #ff6b5e;
+    --fundo: #2b2130;
+    --superficie: #3a2d3b;
+    --texto: #fff5f2;
+    --suave: #d7b5d8;
+    --borda: #574559;
+    --destaque: #f7a3a1;
+    --destaque-texto: #4c3a4d;
+    --suave-destaque: #5a4150;
+    --destaque-forte: #f7a3a1;
+    --bom: #7fd3a8;
+    --medio: #f3c27a;
+    --ruim: #ff9fa8;
+    --palco: #231a25;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --fundo: #14161c; --superficie: #1d2029; --texto: #eceef3; --suave: #9aa1b2; --borda: #2e3240;
-  --destaque: #ff5a4f; --bom: #3ccf7e; --medio: #f0a83a; --ruim: #ff6b5e; color-scheme: dark;
+  --fundo: #2b2130; --superficie: #3a2d3b; --texto: #fff5f2; --suave: #d7b5d8; --borda: #574559;
+  --destaque: #f7a3a1; --destaque-texto: #4c3a4d; --suave-destaque: #5a4150; --destaque-forte: #f7a3a1;
+  --bom: #7fd3a8; --medio: #f3c27a; --ruim: #ff9fa8; --palco: #231a25; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -49,17 +60,17 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   position: sticky; top: 0; z-index: 5;
   display: flex; align-items: center; gap: 10px;
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
-  background: var(--palco); color: #fff;
+  background: var(--palco); color: var(--palco-texto);
 }
 .topo h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
 .destino {
   flex: 1; min-width: 0; text-align: left;
-  background: rgba(255,255,255,.08); color: #e6e8ee; border: 0; border-radius: 999px;
+  background: rgba(215,181,216,.18); color: var(--palco-texto); border: 0; border-radius: 999px;
   padding: 6px 12px; font: inherit; font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .destino.alerta { background: var(--destaque); color: var(--destaque-texto); }
-.icone-btn { background: none; border: 0; color: #fff; padding: 6px; display: grid; place-items: center; }
+.icone-btn { background: none; border: 0; color: var(--palco-texto); padding: 6px; display: grid; place-items: center; }
 .icone-btn svg { width: 24px; height: 24px; }
 
 /* ---------- câmera ---------- */
@@ -82,7 +93,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 }
 .sem-camera {
   position: absolute; inset: 0; display: grid; place-content: center; gap: 14px;
-  padding: 24px; text-align: center; color: #d6d9e0;
+  padding: 24px; text-align: center; color: var(--palco-texto);
 }
 .lendo {
   position: absolute; inset: 0; display: grid; place-content: center; gap: 10px;
@@ -104,8 +115,20 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .disparo span { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--destaque); }
 .disparo:disabled { opacity: .5; }
 .disparo:active span { transform: scale(.92); }
-.controles .btn.secundario { background: rgba(255,255,255,.1); color: #fff; border-color: transparent; }
-#lanterna.ativo { background: #ffd54a; color: #222; }
+.controles .btn.secundario { background: rgba(255,245,242,.12); color: var(--palco-texto); border-color: transparent; }
+#lanterna.ativo { background: var(--suave-destaque); color: #4c3a4d; }
+.modos {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  padding: 0 16px 12px; background: var(--palco); color: var(--palco-texto); font-size: 14px;
+}
+.modo { display: inline-flex; align-items: center; gap: 6px; }
+.modo input { width: 18px; height: 18px; accent-color: var(--destaque); }
+.status-fila { color: var(--palco-suave); font-size: 13px; }
+#revisarFila { margin-left: auto; }
+/* foto automática: a moldura fica verde enquanto a carta está parada, e pisca ao tirar a foto */
+.moldura.firme { border-color: var(--destaque); box-shadow: 0 0 0 9999px rgba(0,0,0,.45), 0 0 18px var(--destaque); }
+.moldura.disparou { animation: disparou .35s ease-out; }
+@keyframes disparou { from { background: rgba(255,255,255,.55); } to { background: transparent; } }
 
 /* ---------- botões e campos ---------- */
 .btn {
@@ -154,7 +177,7 @@ input:focus, select:focus { outline: 2px solid var(--destaque); outline-offset: 
 .candidato.ativo { border-color: var(--destaque); box-shadow: 0 0 0 2px color-mix(in srgb, var(--destaque) 35%, transparent); }
 .candidato .num { color: var(--suave); }
 .candidato.nenhuma { place-content: center; text-align: center; min-height: 80px; color: var(--suave); }
-.link-liga { display: inline-block; margin: 0 0 12px; color: var(--destaque); font-weight: 600; font-size: 14px; }
+.link-liga { display: inline-block; margin: 0 0 12px; color: var(--destaque-forte); font-weight: 600; font-size: 14px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
@@ -187,11 +210,11 @@ input:focus, select:focus { outline: 2px solid var(--destaque); outline-offset: 
 
 .aviso {
   position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 10;
-  padding: 12px 16px; border-radius: 12px; background: #262a35; color: #fff; font-size: 14px;
+  padding: 12px 16px; border-radius: 12px; background: var(--palco); color: var(--palco-texto); font-size: 14px;
   box-shadow: 0 6px 24px rgba(0,0,0,.3);
 }
-.aviso.ok { background: var(--bom); }
-.aviso.erro { background: var(--ruim); }
+.aviso.ok { background: var(--bom); color: var(--fundo); }
+.aviso.erro { background: var(--ruim); color: var(--fundo); }
 
 @media (min-width: 720px) {
   body { max-width: 560px; margin: 0 auto; }

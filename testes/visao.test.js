@@ -38,6 +38,7 @@ function carregarScript({ props, tokeninfo, gemini }) {
       },
     },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ texto: t, setMimeType() { return this; } }) },
+    Utilities: { sleep: () => {} },
   };
   const codigo = readFileSync(new URL('../proxy/AppsScript_imagens.gs', import.meta.url), 'utf8');
   const fn = new Function(...Object.keys(globais), `${codigo}\nreturn { doPost };`);
@@ -82,6 +83,7 @@ test('Apps Script: com a cota do Flash-Lite esgotada, tenta o 3.8 Flash', () => 
       },
     },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ texto: t, setMimeType() { return this; } }) },
+    Utilities: { sleep: () => {} },
   };
   const codigo = readFileSync(new URL('../proxy/AppsScript_imagens.gs', import.meta.url), 'utf8');
   const { doPost } = new Function(...Object.keys(globais), `${codigo}\nreturn { doPost };`)(...Object.values(globais));
@@ -98,4 +100,40 @@ test('extra pelo Gemini vira o nome da coluna Extra; sem o campo, fica para a an
   assert.equal(normalizarLeitura({ extra: 'Normal' }).extraGemini, 'Normal');
   assert.equal(normalizarLeitura({ extra: '' }).extraGemini, '', 'não deu para ver o brilho');
   assert.equal(normalizarLeitura({ nome: 'X' }).extraGemini, undefined, 'intermediário antigo, sem o campo');
+});
+
+test('Apps Script: Gemini sobrecarregado (503) é tentado de novo antes de desistir', () => {
+  let n = 0;
+  // o Gemini responde 503 duas vezes, depois ok
+  const codigo = readFileSync(new URL('../proxy/AppsScript_imagens.gs', import.meta.url), 'utf8');
+  const resposta = (c, corpo) => ({ getResponseCode: () => c, getContentText: () => JSON.stringify(corpo) });
+  const globais = {
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => PROPS[k] ?? null }) },
+    UrlFetchApp: { fetch: (url) => (url.includes('tokeninfo') ? resposta(200, { aud: PROPS.CLIENT_ID }) : (++n <= 2 ? resposta(503, {}) : resposta(...GEMINI_OK))) },
+    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ texto: t, setMimeType() { return this; } }) },
+    Utilities: { sleep: () => {} },
+  };
+  const { doPost } = new Function(...Object.keys(globais), `${codigo}\nreturn { doPost };`)(...Object.values(globais));
+  const r = JSON.parse(doPost({ postData: { contents: JSON.stringify({ acao: 'lerCarta', token: 't', imagem: 'A' }) } }).texto);
+  assert.equal(r.ok, true);
+  assert.equal(n, 3);
+});
+
+test('lerComGemini tenta de novo em erro temporário e só então desiste', async () => {
+  const { lerComGemini } = await import('../src/visao.js');
+  const original = globalThis.fetch;
+  globalThis.document = { createElement: () => ({}) };
+  const canvas = { width: 10, height: 14, toDataURL: () => 'data:image/jpeg;base64,AAAA' };
+  let n = 0;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => (++n < 3 ? { ok: false, erro: 'Gemini sobrecarregado (HTTP 503).', temporario: true } : { ok: true, modelo: 'm', carta: { nome: 'Slowbro', numero: '090', total: '084' } }) });
+  try {
+    const l = await lerComGemini(canvas, { proxy: 'p', token: 't', esperas: [1, 1] });
+    assert.equal(l.nome, 'Slowbro');
+    assert.equal(n, 3);
+    n = -100; // sempre falha
+    await assert.rejects(lerComGemini(canvas, { proxy: 'p', token: 't', esperas: [1, 1] }), /sobrecarregado/);
+  } finally {
+    globalThis.fetch = original;
+    delete globalThis.document;
+  }
 });
