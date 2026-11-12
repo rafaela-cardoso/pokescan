@@ -42,11 +42,20 @@ function guardar(edicao, idioma) {
 const classe = (i) => { const g = grupoIdioma(i); return !g ? '' : g === 'INT' ? 'INT' : 'ASIA'; };
 
 // Tira da lista as edições cujo idioma (já lido) é da outra classe. Mantém a lista se ela ficaria vazia.
-export function filtrarPorIdiomaDaEdicao(lista, idioma, conhecido = idiomaConhecido) {
+// `protegida(c)`: cartas que nunca saem (as de número igual ao lido): o OCR nas imagens pequenas da Liga erra às
+// vezes, e o palpite fica guardado, escondendo a carta certa em toda leitura seguinte.
+export function filtrarPorIdiomaDaEdicao(lista, idioma, conhecido = idiomaConhecido, protegida = () => false) {
   const alvo = classe(idioma);
   if (!alvo) return lista;
-  const ok = lista.filter((c) => { const k = classe(conhecido(c)); return !k || k === alvo; });
+  const ok = lista.filter((c) => { const k = classe(conhecido(c)); return protegida(c) || !k || k === alvo; });
   return ok.length ? ok : lista;
+}
+
+// Você tocou nesta carta: a edição dela é do idioma da carta lida. Corrige um palpite errado do OCR guardado antes.
+export function confirmarIdiomaDaEdicao(c, idioma) {
+  const ed = edicaoDe(c);
+  if (!ed || !classe(idioma) || classe(idiomaConhecido(c)) === classe(idioma)) return;
+  guardar(ed, idioma);
 }
 
 // Baixa a imagem pelo intermediário e devolve um canvas com a carta.
