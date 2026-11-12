@@ -40,3 +40,14 @@ test('sem idioma lido (nem da carta nem das edições): nada sai', () => {
   assert.equal(filtrarPorIdiomaDaEdicao(lista, '', conhecido).length, 3);
   assert.equal(filtrarPorIdiomaDaEdicao(lista, 'PT', () => '').length, 3);
 });
+
+test('palpite de idioma errado não esconde a carta de número igual ao lido (Rayquaza XY64)', () => {
+  const lista = [
+    { id: 'x|767|XY64', numero: 'XY64', total: '∞' },
+    { id: 'x|900|014', numero: '014', total: '015' },
+  ];
+  const palpite = (c) => (c.id.includes('|767|') ? 'JP' : 'EN'); // XYPR marcada como japonesa por engano
+  assert.deepEqual(filtrarPorIdiomaDaEdicao(lista, 'EN', palpite).map((c) => c.numero), ['014']);
+  const exato = (c) => c.numero === 'XY64';
+  assert.deepEqual(filtrarPorIdiomaDaEdicao(lista, 'EN', palpite, exato).map((c) => c.numero), ['XY64', '014']);
+});

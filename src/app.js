@@ -8,12 +8,12 @@ import { PADRAO, ESTADOS } from './config.js';
 import * as camera from './camera.js';
 import { lerCarta, lerIdioma, aquecer } from './ocr.js';
 import { lerComGemini } from './visao.js';
-import { descobrirIdiomas, filtrarPorIdiomaDaEdicao } from './edicoes.js';
+import { descobrirIdiomas, filtrarPorIdiomaDaEdicao, confirmarIdiomaDaEdicao, idiomaConhecido } from './edicoes.js';
 import { detectarExtra } from './extras.js';
 import {
   buscarCandidatos, linkLiga, EXTRAS, filtrarPorNome, filtrarPorIdioma, filtrarPorTotal, filtrarPorSigla, siglaParaLink,
 } from './liga.js';
-import { formatarCarta } from './carta.js';
+import { formatarCarta, numeroCatalogo } from './carta.js';
 import { NOMES_IDIOMA } from './idioma.js';
 import { idDaPlanilha, gidDaPlanilha, lerPlanilha, adicionarCarta } from './planilha.js';
 import * as conta from './google.js';
@@ -274,7 +274,7 @@ async function consultarLiga(lido) {
   let lista = [...vistos.values()].sort((a, b) => b.nota - a.nota);
   lista = filtrarPorNome(lista, lido.nome, lido.qualidadeNome ?? 1);
   lista = filtrarPorIdioma(lista, idiomaParaEdicoes(lido));
-  lista = filtrarPorIdiomaDaEdicao(lista, idiomaParaEdicoes(lido)); // edições cujo idioma já foi lido antes
+  lista = filtrarPorIdiomaDaEdicao(lista, idiomaParaEdicoes(lido), idiomaConhecido, numeroExato(lido)); // edições cujo idioma já foi lido antes
   for (const n of leiturasNumero) {
     const filtrada = filtrarPorTotal(lista, n);
     if (filtrada !== lista) { lista = filtrada; break; }
@@ -289,6 +289,11 @@ async function consultarLiga(lido) {
   // sem nome legível só o número sustenta a escolha: sempre pede conferência
   leitura.confiavel = !!(a && a.nota >= CONFIANCA_ALTA && folga >= 0.1 && (lido.qualidadeNome ?? 1) >= 0.5);
 }
+
+// Carta da Liga com o número (e o total, se lido) igual ao da leitura: o palpite de idioma da edição não a esconde.
+const semZerosCarta = (s) => numeroCatalogo(String(s ?? '').toUpperCase());
+const numeroExato = (lido) => (c) => (lido.numeros || []).some((n) => n.numero
+  && semZerosCarta(c.numero) === semZerosCarta(n.numero) && (!n.total || semZerosCarta(c.total) === semZerosCarta(n.total)));
 
 // Lê pelo OCR o idioma das edições sugeridas (imagens da Liga, via intermediário) e tira as de outro idioma.
 // Roda depois de mostrar a grade; se você já leu outra carta, para.
@@ -309,7 +314,7 @@ async function verificarEdicoes(alvo) {
     });
     if (!atual()) return;
     const antes = alvo.candidatos.length;
-    const filtrada = filtrarPorIdiomaDaEdicao(alvo.candidatos, idiomaParaEdicoes(lido));
+    const filtrada = filtrarPorIdiomaDaEdicao(alvo.candidatos, idiomaParaEdicoes(lido), idiomaConhecido, numeroExato(lido));
     statusEdicoes = filtrada.length < antes ? `${antes - filtrada.length} edição(ões) de outro idioma removida(s)` : '';
     if (filtrada.length < antes) {
       const escolhida = alvo.atual && filtrada.includes(alvo.atual) ? alvo.atual : null;
@@ -368,7 +373,10 @@ function cartaoCandidato(c) {
   num.className = 'num';
   num.textContent = `${c.numero}/${c.total}${c.sigla ? ` · ${c.sigla}` : ''}`;
   b.append(img, nome, num);
-  b.addEventListener('click', () => aplicarCandidato(c));
+  b.addEventListener('click', () => {
+    aplicarCandidato(c);
+    if (leitura) confirmarIdiomaDaEdicao(c, idiomaParaEdicoes(leitura.lido));
+  });
   return b;
 }
 
