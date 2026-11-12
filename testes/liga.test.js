@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { separarNomeLiga, converter, linkLiga, semelhancaNumero, pontuar, consultas, urlBusca, variacoesNumero,
-  edicaoDoItem, siglaDaEdicao, siglasNoTexto, filtrarPorSigla, siglaParaLink } from '../src/liga.js';
+  edicaoDoItem, siglaDaEdicao, siglasNoTexto, filtrarPorSigla, siglaParaLink,
+  nomeBate, filtrarPorNome, filtrarPorIdioma, idiomaPelaEdicao } from '../src/liga.js';
 
 // Respostas reais da API de busca da Liga (query "026/128").
 const ITENS = [
@@ -198,4 +199,29 @@ test('link da Liga na edição certa', () => {
   assert.equal(linkLiga('Goldeen (013/084)', { sigla: 'PBL', numero: '013' }),
     'https://www.ligapokemon.com.br/?view=cards%2Fcard&tipo=1&card=Goldeen%20(013%2F084)&ed=PBL&num=013');
   assert.equal(linkLiga('Goldeen (013/084)'), 'https://www.ligapokemon.com.br/?view=cards%2Fcard&tipo=1&card=Goldeen%20(013%2F084)');
+});
+
+// ---------- nome com sufixo e idioma pela edição ----------
+test('nome lido sem o sufixo do logotipo ainda bate (Gengar -> Gengar Prime)', () => {
+  assert.ok(nomeBate({ nome: 'Gengar Prime', nomeEN: 'Gengar Prime' }, 'Gengar'));
+  assert.ok(nomeBate({ nome: 'Charizard ex', nomeEN: 'Charizard ex' }, 'Charizard'));
+  assert.ok(!nomeBate({ nome: 'Weedle', nomeEN: 'Weedle' }, 'Gengar'));
+  const lista = [{ nome: 'Weedle', nomeEN: 'Weedle' }, { nome: 'Gengar Prime', nomeEN: 'Gengar Prime' }];
+  assert.deepEqual(filtrarPorNome(lista, 'Gengar', 1).map((c) => c.nome), ['Gengar Prime']);
+});
+
+test('número com o primeiro dígito perdido conta como parecido ("4" de "94")', () => {
+  assert.equal(semelhancaNumero('94', '4'), 0.6);
+  assert.equal(semelhancaNumero('4', '94'), 0.6);
+  assert.equal(semelhancaNumero('94', '5'), 0);
+});
+
+test('idioma pela tabela de edições: coleções japonesas sem sufixo no número', () => {
+  assert.equal(idiomaPelaEdicao('319'), 'JP'); // EPJP Expansion Pack
+  assert.equal(idiomaPelaEdicao('592'), 'JP'); // SV7 Stellar Miracle
+  assert.equal(idiomaPelaEdicao('822'), 'JP'); // M6a 30th Celebration (Japanese)
+  assert.equal(idiomaPelaEdicao('754'), null); // ASC Heróis Excelsos
+  assert.equal(idiomaPelaEdicao('792'), null); // PBL
+  const lista = [{ numero: '004', edicao: '319' }, { numero: '094', edicao: '754' }];
+  assert.deepEqual(filtrarPorIdioma(lista, 'PT').map((c) => c.edicao), ['754']);
 });
