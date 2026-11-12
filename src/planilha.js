@@ -118,13 +118,29 @@ export function quantidadeExistente(valor) {
 }
 
 // Escritas (uma por célula) da linha `indice` (0 = linha 1). Só campos mapeados e com valor.
+// O link da Liga não entra aqui: vai como hyperlink "Abrir na Liga" (ver celulaLink).
 export function montarEscritas(aba, indice, mapa, registro) {
   return Object.entries(mapa)
-    .filter(([campo]) => registro[campo] != null && String(registro[campo]) !== '')
+    .filter(([campo]) => campo !== 'liga' && registro[campo] != null && String(registro[campo]) !== '')
     .map(([campo, col]) => {
       const v = registro[campo];
       return { range: intervalo(aba, `${letraColuna(col)}${indice + 1}`), values: [[campo === 'quantidade' ? Number(v) : String(v)]] };
     });
+}
+
+export const TEXTO_LINK = 'Abrir na Liga';
+
+// Pedido (spreadsheets.batchUpdate) que grava o texto "Abrir na Liga" com o link na célula — o mesmo texto que o
+// liga_price_sheets usa. Vai como texto com link (e não como fórmula HYPERLINK) porque o separador da fórmula
+// muda com o idioma da planilha ("," ou ";").
+export function celulaLink(sheetId, indice, coluna, url) {
+  return {
+    updateCells: {
+      start: { sheetId, rowIndex: indice, columnIndex: coluna },
+      rows: [{ values: [{ userEnteredValue: { stringValue: TEXTO_LINK }, textFormatRuns: [{ startIndex: 0, format: { link: { uri: url } } }] }] }],
+      fields: 'userEnteredValue,textFormatRuns',
+    },
+  };
 }
 
 async function chamar(token, url, opcoes = {}) {
@@ -197,5 +213,14 @@ export async function adicionarCarta(token, id, aba, registro) {
   await chamar(token, `${API}/${id}/values:batchUpdate`, {
     method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data }),
   });
+  if ('liga' in cab.mapa && registro.liga) {
+    const p = await lerPlanilha(token, id);
+    const sheetId = Number(Object.keys(p.gids).find((g) => p.gids[g] === aba));
+    if (Number.isFinite(sheetId)) {
+      await chamar(token, `${API}/${id}:batchUpdate`, {
+        method: 'POST', body: JSON.stringify({ requests: [celulaLink(sheetId, indice, cab.mapa.liga, registro.liga)] }),
+      });
+    }
+  }
   return { linha: indice + 1, somada: false, quantidade: lido };
 }

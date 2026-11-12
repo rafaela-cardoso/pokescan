@@ -52,6 +52,14 @@ test('extrairNome descarta lixo misturado com dígitos (leitura real ruim)', () 
   assert.equal(extrairNome('Pikachu ex'), 'Pikachu ex');
 });
 
+test('extrairNome junta a inicial separada e mantém "da" (Scarlet & Violet)', () => {
+  // leituras reais da Gabite da Cíntia (110/217)
+  assert.equal(extrairNome('G abite da Cíntia'), 'Gabite da Cíntia');
+  assert.equal(qualidadeNome('Gabite da Cíntia'), 1);
+  assert.ok(qualidadeNome('TARA') < 0.85, 'palavra toda em maiúsculas é suspeita');
+  assert.equal(qualidadeNome('Mewtwo VMAX'), 1);
+});
+
 test('qualidadeNome', () => {
   assert.equal(qualidadeNome('Pikachu'), 1);
   assert.equal(qualidadeNome('Charizard ex'), 1);

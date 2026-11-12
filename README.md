@@ -73,11 +73,33 @@ Se a aba estiver vazia, o app cria o cabeçalho da planilha de leilão:
 `Quantidade | Carta | Estado | Preço (Liga) | Extra | Idioma | Erros | Preço (compra) | Link liga | 10% off | opçoes | lance inicial | fechamento | pagamento`
 
 **Coreano:** o app grava sempre `KR` (o bot de leilão lê `KR`). Na comparação com cartas já gravadas, `KR` e `KO`
-contam como o mesmo idioma. Atenção: o liga_price_sheets só reconhece `KO`; para ele preencher o preço de uma carta
-coreana, a extensão precisa aceitar `KR` também.
+contam como o mesmo idioma (o liga_price_sheets aceita os dois).
+
+**Link liga:** gravado como o texto **Abrir na Liga** com o link da carta, já na edição da coleção (`&ed=ASC`).
 
 **Pendentes:** sem internet ou com erro, a carta fica na lista **Gravadas** marcada como pendente. **Enviar pendentes**
 tenta de novo; **Descartar pendentes** apaga as que ainda não foram gravadas (as já gravadas não são afetadas).
+
+## Fotos no Drive
+
+Com **Configurar → Fotos no Drive** ligado, cada carta gravada também tem a foto (o recorte da carta) salva na pasta
+do Drive informada, com o nome da coluna Carta e `-` no lugar de `/`: `Gabite da Cíntia (110-217).jpg`. O login
+pede o acesso ao Drive (escopo do Drive inteiro: o restrito não permite gravar numa pasta que o app não criou).
+Se a foto não subir, ela fica guardada no celular e vai com **Enviar pendentes**. Na publicação, o link da pasta
+vem da variável `POKESCAN_PASTA_DRIVE` do repositório.
+
+## Coleção (sigla)
+
+Desde Scarlet & Violet, a carta traz a sigla da coleção numa caixa preta antes do número (`ASC PT 110/217`).
+A mesma carta pode existir em coleções diferentes, então o app lê essa sigla e:
+
+1. deixa na grade só as edições da Liga dessa coleção (e as variantes dela: `ASC` vale para `ASCES` e `ASCPB`);
+2. mostra a sigla no campo **Coleção**, que pode ser corrigido à mão;
+3. monta o link da Liga já na edição certa.
+
+A busca da Liga só informa o número da edição; a sigla vem da tabela `src/edicoes-liga.js`, tirada da
+[página de edições da Liga](https://www.ligapokemon.com.br/?view=cards/edicoes). Quando sair coleção nova, salve essa
+página pelo navegador (Ctrl+S, "somente HTML") em `_teste/edicoes.html` e rode `npm run edicoes`.
 
 ## Idioma das edições sugeridas
 
@@ -154,13 +176,20 @@ O app grava com a **sua** conta Google (não usa conta de serviço como o bot), 
 que você possa editar. É preciso um *Client ID* OAuth, gratuito:
 
 1. Em [console.cloud.google.com](https://console.cloud.google.com), crie um projeto (ou use o do bot).
-2. **APIs e serviços → Biblioteca**: ative a **Google Sheets API**.
+2. **APIs e serviços → Biblioteca**: ative a **Google Sheets API** (e a **Google Drive API**, para salvar as fotos).
 3. **APIs e serviços → Tela de consentimento OAuth**: tipo **Externo**, preencha nome e e-mail; em **Público-alvo /
    Usuários de teste**, adicione o seu Gmail (o app fica em modo de teste, só para você e quem você adicionar).
 4. **Credenciais → Criar credenciais → ID do cliente OAuth → Aplicativo da Web**. Em **Origens JavaScript
    autorizadas**, adicione:
    - `https://SEU-USUARIO.github.io`
    - `http://localhost:5173` (para testar no computador)
+
+   Em **URIs de redirecionamento autorizados**, adicione o endereço do app, com a barra no final:
+   - `https://SEU-USUARIO.github.io/pokescan/`
+   - `http://localhost:5173/`
+
+   No navegador o login abre num popup; no app instalado na tela inicial (onde o iPhone não abre popup) a página
+   vai para o Google e volta para o app, e é para isso que serve o redirecionamento.
 5. Copie o **ID do cliente** (`….apps.googleusercontent.com`) e cole no app em **Configurar → Client ID**.
    Para não ter de digitar no celular, cadastre-o também em **Settings → Secrets and variables → Actions →
    Variables** do repositório, com o nome `POKESCAN_CLIENT_ID`: a CI já publica o app com ele preenchido.

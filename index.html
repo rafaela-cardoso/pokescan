@@ -74,6 +74,7 @@
       <div class="linha">
         <label class="campo"><span>Número</span><input id="numero" autocomplete="off" inputmode="text"></label>
         <label class="campo"><span>Total</span><input id="total" autocomplete="off" inputmode="text"></label>
+        <label class="campo curto"><span>Coleção</span><input id="sigla" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6"></label>
         <label class="campo curto"><span>Qtd.</span><input id="quantidade" type="number" min="1" value="1" inputmode="numeric"></label>
       </div>
       <a id="linkLiga" class="link-liga" target="_blank" rel="noopener" hidden>Ver preços desta carta na Liga Pokémon ↗</a>
@@ -163,6 +164,17 @@
       <p class="ajuda">Com ele, o app lê o idioma das cartas sugeridas pela Liga e tira as de outro idioma. Veja o README.</p>
       <label class="opcao"><input id="nomeEmIngles" type="checkbox"> Gravar o nome em inglês (padrão: o nome da Liga, em português quando existe)</label>
       <label class="opcao"><input id="salvarDireto" type="checkbox"> Gravar direto quando a leitura for confiável (sem revisar)</label>
+    </section>
+
+    <section class="cartao">
+      <h2>Fotos no Drive</h2>
+      <label class="opcao"><input id="salvarFoto" type="checkbox"> Salvar a foto da carta no Google Drive ao gravar</label>
+      <label class="campo">
+        <span>Link da pasta</span>
+        <input id="pastaDrive" type="url" autocomplete="off" spellcheck="false" placeholder="https://drive.google.com/drive/folders/…">
+      </label>
+      <p class="ajuda">A foto recebe o mesmo nome da coluna Carta, com “-” no lugar de “/”: Gabite da Cíntia (110-217).jpg.
+        No primeiro envio o Google pede para liberar o acesso ao Drive.</p>
     </section>
 
     <div class="acoes fim">

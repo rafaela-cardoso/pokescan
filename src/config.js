@@ -20,6 +20,9 @@ export const PADRAO = {
   proxyImagens: 'https://script.google.com/macros/s/AKfycbwjPirts9jQFRIsy3oit_d6n82RfTTh-7FJclycDKRH73ycMh5oCU4x-p69AkUM7fAF/exec',
   nomeEmIngles: false, // gravar o nome em inglês em vez do nome da Liga (português quando existe)
   salvarDireto: false, // gravar sem revisar quando a leitura tiver confiança alta
+  salvarFoto: false, // salvar a foto da carta no Google Drive (na pasta abaixo)
+  // link da pasta do Drive para as fotos. Na publicação vem da variável POKESCAN_PASTA_DRIVE (não fica no código)
+  pastaDrive: '',
 };
 
 export const ESTADOS = ['M', 'NM', 'SP', 'MP', 'HP', 'D'];

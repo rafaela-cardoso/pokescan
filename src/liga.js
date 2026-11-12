@@ -12,6 +12,7 @@
 // consegue, então o pokescan grava a carta no formato que a extensão lê (Carta, Estado, Extra, Idioma) e mostra o
 // link da carta na Liga.
 import { semAcento } from './idioma.js';
+import { EDICOES } from './edicoes-liga.js';
 import { semelhanca } from './carta.js';
 
 const BUSCA = 'https://www.clubedaliga.com.br/api/cardsearch';
@@ -39,6 +40,51 @@ export function separarNomeLiga(texto) {
   return { nome: m[1].trim(), numero: m[2].trim(), total: m[3].trim() };
 }
 
+// Número da edição na Liga: o do meio da chave ("marketplace:cards:tcg2:494|792|013") ou a pasta da imagem (".../cd/792/...").
+export function edicaoDoItem(item) {
+  const k = String(item?.__key ?? '').split('|');
+  if (k.length >= 3 && /^\d+$/.test(k[1])) return k[1];
+  const m = String(item?.sPathImage ?? '').match(/\/cd\/(\d+)\//);
+  return m ? m[1] : '';
+}
+
+// Sigla e nome de uma edição da Liga ('' se a edição não está na tabela).
+export const siglaDaEdicao = (id) => EDICOES[id]?.[0] || '';
+export const nomeDaEdicao = (id) => EDICOES[id]?.[1] || '';
+const SIGLAS = new Set(Object.values(EDICOES).map(([s]) => s));
+export const siglaExiste = (s) => SIGLAS.has(String(s ?? '').trim().toUpperCase());
+
+// Siglas de coleção no texto lido no rodapé ("I ASC PT 110/217" -> ["ASC"]). Só valem siglas de 3+ caracteres
+// que existem na Liga (as de 2 letras são de coleções antigas, que não imprimem a sigla, e dariam falso positivo).
+// Tolera as trocas comuns do OCR entre letra e dígito (A5C -> ASC, 0BF -> OBF).
+const TROCA_SIGLA = { 0: 'O', O: '0', 1: 'I', I: '1', 5: 'S', S: '5', 8: 'B', B: '8', 2: 'Z', Z: '2' };
+// `daCaixa`: texto lido só na caixa da sigla, onde o idioma miúdo ("PT") costuma virar uma letra a mais ("ASCH"):
+// aí também valem os começos do trecho (o mais longo que existir na Liga).
+export function siglasNoTexto(texto, { daCaixa = false } = {}) {
+  const achadas = [];
+  for (const t of String(texto ?? '').toUpperCase().match(/[A-Z0-9]{3,6}/g) || []) {
+    if (/^\d+$/.test(t)) continue;
+    // a sigla pode vir grudada no idioma ("ASCPT"): tenta também sem o final de idioma
+    const bases = [t, t.replace(/(PT|EN|JP|KR|KO)$/, '')];
+    if (daCaixa) for (let n = t.length - 1; n >= 3; n--) bases.push(t.slice(0, n));
+    for (const b of bases.filter((x) => x.length >= 3)) {
+      let variantes = [b];
+      for (let i = 0; i < b.length; i++) {
+        const troca = TROCA_SIGLA[b[i]];
+        if (troca) variantes = variantes.concat(variantes.map((v) => v.slice(0, i) + troca + v.slice(i + 1)));
+      }
+      const ok = variantes.find((v) => SIGLAS.has(v));
+      if (ok && !achadas.includes(ok)) { achadas.push(ok); break; }
+    }
+  }
+  return achadas;
+}
+
+// A edição do candidato é a da sigla lida? Vale também para as variantes da mesma coleção
+// (ASC lida na carta = ASC, ASCES e ASCPB na Liga: padrões de Energia e de Poké Bola).
+export const mesmaColecao = (siglaEdicao, siglaLida) =>
+  !!siglaEdicao && !!siglaLida && (siglaEdicao === siglaLida || (siglaLida.length >= 3 && siglaEdicao.startsWith(siglaLida)));
+
 // Item da API -> formato do app.
 export function converter(item) {
   const pt = separarNomeLiga(item.sNomeIdiomaPrincipal);
@@ -51,13 +97,36 @@ export function converter(item) {
     numero: pt.numero || en.numero,
     total: pt.total || en.total,
     nomeLiga: decodificar(item.sNomeIdiomaPrincipal).trim(), // texto exato usado no link da Liga
+    edicao: edicaoDoItem(item),
+    sigla: siglaDaEdicao(edicaoDoItem(item)),
     imagem: img ? (img.startsWith('//') ? `https:${img}` : img) : '',
   };
 }
 
-// Link da página da carta na Liga (montarUrlCarta do liga_price_sheets).
-export const linkLiga = (nomeLiga) =>
-  `https://www.ligapokemon.com.br/?view=cards%2Fcard&tipo=1&card=${encodeURIComponent(nomeLiga)}`;
+// Link da página da carta na Liga (montarUrlCarta do liga_price_sheets). Com a sigla, abre na edição certa: a mesma
+// carta ("Pikachu (026/128)") pode estar em várias coleções, e a página só mostra uma.
+export function linkLiga(nomeLiga, { sigla = '', numero = '' } = {}) {
+  let url = `https://www.ligapokemon.com.br/?view=cards%2Fcard&tipo=1&card=${encodeURIComponent(nomeLiga)}`;
+  if (sigla) url += `&ed=${encodeURIComponent(sigla)}`;
+  if (sigla && numero) url += `&num=${encodeURIComponent(numero)}`;
+  return url;
+}
+
+// Sigla da coleção que vai no link: a lida na carta, quando existe na Liga; senão, a da edição do candidato.
+// A lida ganha porque a busca da Liga devolve uma só edição para cartas com o mesmo nome e número.
+// Se a lida é a mesma coleção do candidato (ASC x ASCPB), fica a do candidato, que é mais exata.
+export function siglaParaLink(candidato, siglasLidas = []) {
+  const lida = siglasLidas.find(siglaExiste) || '';
+  if (!lida) return candidato?.sigla || '';
+  return mesmaColecao(candidato?.sigla, lida) ? candidato.sigla : lida;
+}
+
+// Fica só com as edições da coleção lida na carta, se houver alguma (senão a leitura pode estar errada: não esconde nada).
+export function filtrarPorSigla(lista, siglasLidas = []) {
+  if (!siglasLidas.length) return lista;
+  const mesmas = lista.filter((c) => siglasLidas.some((s) => mesmaColecao(c.sigla, s)));
+  return mesmas.length ? mesmas : lista;
+}
 
 export const urlBusca = (consulta, quantidade = 20) =>
   `${BUSCA}?${new URLSearchParams({ tcg: '2', maxQuantity: String(quantidade), maintype: '1', query: consulta })}`;
