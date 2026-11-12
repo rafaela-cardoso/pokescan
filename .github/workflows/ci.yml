@@ -35,6 +35,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
+      contents: read # sem isto o checkout falha em repositório privado
       pages: write
       id-token: write
     environment:
