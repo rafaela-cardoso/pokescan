@@ -124,7 +124,33 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .modo { display: inline-flex; align-items: center; gap: 6px; }
 .modo input { width: 18px; height: 18px; accent-color: var(--destaque); }
 .status-fila { color: var(--palco-suave); font-size: 13px; }
-#revisarFila { margin-left: auto; }
+/* ---------- fila (várias cartas) ---------- */
+.fila { margin: 16px; padding: 14px; border-radius: var(--raio); background: var(--superficie); border: 1px solid var(--borda); }
+.fila-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.fila-topo h2 { margin: 0; font-size: 17px; }
+.selecionar-todas { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--suave); }
+.selecionar-todas input, .item-fila summary input { width: 20px; height: 20px; accent-color: var(--destaque); flex: none; }
+.lista-fila { display: grid; gap: 8px; }
+.item-fila { border: 1px solid var(--borda); border-radius: 12px; background: var(--fundo); }
+.item-fila[open] { border-color: var(--destaque); }
+.item-fila summary {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; list-style: none;
+}
+.item-fila summary::-webkit-details-marker { display: none; }
+.item-fila summary canvas { width: 40px; height: 56px; border-radius: 4px; background: #000; flex: none; }
+.item-fila .titulo-item { flex: 1; min-width: 0; display: grid; }
+.item-fila .titulo-item b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-fila .titulo-item span { font-size: 13px; color: var(--suave); }
+.item-fila .seta { color: var(--suave); transition: transform .2s; }
+.item-fila[open] .seta { transform: rotate(180deg); }
+.item-fila .corpo { padding: 4px 12px 12px; }
+.estado-item { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.estado-item.bom { background: color-mix(in srgb, var(--bom) 18%, transparent); color: var(--bom); }
+.estado-item.medio { background: color-mix(in srgb, var(--medio) 18%, transparent); color: var(--medio); }
+.estado-item.ruim { background: color-mix(in srgb, var(--ruim) 18%, transparent); color: var(--ruim); }
+.estado-item.lendo { background: var(--suave-destaque); color: var(--texto); }
+.fila-acoes { margin-top: 12px; }
+#abrirFila { margin-left: auto; }
 /* foto automática: a moldura fica verde enquanto a carta está parada, e pisca ao tirar a foto */
 .moldura.firme { border-color: var(--destaque); box-shadow: 0 0 0 9999px rgba(0,0,0,.45), 0 0 18px var(--destaque); }
 .moldura.disparou { animation: disparou .35s ease-out; }

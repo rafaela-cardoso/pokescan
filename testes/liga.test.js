@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { separarNomeLiga, converter, linkLiga, semelhancaNumero, pontuar, consultas, urlBusca, variacoesNumero,
   edicaoDoItem, siglaDaEdicao, siglasNoTexto, filtrarPorSigla, siglaParaLink,
-  nomeBate, filtrarPorNome, filtrarPorIdioma, idiomaPelaEdicao } from '../src/liga.js';
+  nomeBate, filtrarPorNome, filtrarPorIdioma, idiomaPelaEdicao, consultasExatas } from '../src/liga.js';
 
 // Respostas reais da API de busca da Liga (query "026/128").
 const ITENS = [
@@ -230,4 +230,21 @@ test('idioma pela tabela de edições: coleções japonesas sem sufixo no númer
 test('promo sem total: busca também sem o dígito a mais ("XY644" -> "(XY64/")', () => {
   const q = consultas({ nome: 'Úds', numero: 'XY644', total: '', qualidadeNome: 1 });
   assert.ok(q.includes('(XY64/'));
+});
+
+test('busca exata (leitura do Gemini): nome e número como na carta, poucas consultas', () => {
+  assert.deepEqual(consultasExatas({ nome: 'Slowbro', numero: '090', total: '084', idioma: 'PT' }),
+    ['Slowbro (090/084)', '(090/084)', 'Slowbro (090']);
+  assert.deepEqual(consultasExatas({ nome: 'Rayquaza', numero: 'XY64', total: '', idioma: 'EN' }), ['Rayquaza (XY64/', 'Rayquaza (XY64']);
+  assert.deepEqual(consultasExatas({ nome: 'Pikachu', numero: '030', total: '103', idioma: 'CH' }),
+    ['Pikachu (030/103)', 'Pikachu (030C/', 'Pikachu (030']);
+  assert.ok(consultasExatas({ nome: 'Penny', numero: '1004', total: '04', idioma: 'CHS' }).includes('(1004-04'));
+});
+
+test('Gem Pack chinês: "1004-04/140" na Liga é "1004/04" impresso; nome só no campo secundário', () => {
+  const c = converter({ __key: 'x|716|1004-04', sNomeIdiomaPrincipal: '', sNomeIdiomaSecundario: 'Penny (Illustration Rare) (1004-04/140)' });
+  assert.equal(c.nomeLiga, 'Penny (Illustration Rare) (1004-04/140)');
+  assert.deepEqual(c.impresso, { numero: '1004', total: '04' });
+  assert.ok(nomeBate(c, 'Penny'), 'nome sem o "(Illustration Rare)"');
+  assert.ok(pontuar(c, { nome: 'Penny', numero: '1004', total: '04' }) > 0.9);
 });

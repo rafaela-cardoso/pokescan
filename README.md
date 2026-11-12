@@ -86,10 +86,11 @@ tenta de novo; **Descartar pendentes** apaga as que ainda não foram gravadas (a
   carta nova fica parada na moldura por um instante (a moldura fica coral enquanto espera). O botão continua
   funcionando. A mesma carta não é fotografada duas vezes; se a foto saiu sem carta (mesa vazia), o app ignora
   aquela cena. Com uma carta em revisão, a foto automática espera você gravar ou descartar.
-- **Várias cartas (fila)**: cada foto (automática, do botão ou da galeria) só entra numa fila e é lida em segundo
-  plano, uma por vez (respeitando o limite do Gemini). Passe as cartas uma a uma; depois toque em **Revisar fila**:
-  cada carta abre já buscada na Liga e, ao gravar ou descartar, a próxima abre sozinha. A fila fica só na memória:
-  recarregar o app a perde.
+- **Várias cartas (fila)**: cada foto (automática, do botão ou da galeria) entra numa fila e é lida e buscada na
+  Liga em segundo plano, uma por vez (respeitando o limite do Gemini). **Abrir fila** mostra todas as cartas: cada uma
+  é um menu que abre e fecha, com caixa de seleção (visível mesmo fechado) e as opções de revisão. O que você muda fica
+  guardado na carta até enviar ou descartar. No fim da tela: **Enviar selecionadas** e **Descartar selecionadas**.
+  **Escanear mais cartas** volta para a câmera sem perder a fila. A fila fica só na memória: recarregar o app a perde.
 - **Limpar gravadas** (na lista "Gravadas"): tira da lista as cartas já gravadas; as pendentes ficam e a planilha
   não muda.
 
@@ -121,6 +122,10 @@ Passo a passo (uma vez):
 
 Sempre que `proxy/AppsScript_imagens.gs` mudar (por exemplo, quando o extra passou a ser pedido ao Gemini), repita os
 passos 2 e 4: cole o código novo e publique uma nova versão. As propriedades do script continuam lá.
+
+Com a leitura do Gemini, a busca na Liga usa o nome e o número exatamente como estão na carta (uma ou duas
+consultas). Para cartas em japonês, coreano ou chinês, o Gemini também devolve o nome em inglês, que é o usado na
+busca; as versões com sufixo no número ("030C/103") e os Gem Packs chineses ("1004-04/140") também são achados.
 
 Se o Gemini responder que está sobrecarregado (503), o intermediário tenta de novo duas vezes, troca de modelo e,
 se ainda assim falhar, o app espera e tenta mais duas vezes; o OCR só lê em último caso.

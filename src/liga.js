@@ -87,16 +87,22 @@ export const mesmaColecao = (siglaEdicao, siglaLida) =>
 
 // Item da API -> formato do app.
 export function converter(item) {
-  const pt = separarNomeLiga(item.sNomeIdiomaPrincipal);
-  const en = separarNomeLiga(item.sNomeIdiomaSecundario || item.sNomeIdiomaPrincipal);
+  // algumas edições (chinês simplificado) vêm só com o nome secundário, em inglês
+  const principal = decodificar(item.sNomeIdiomaPrincipal).trim() || decodificar(item.sNomeIdiomaSecundario).trim();
+  const pt = separarNomeLiga(principal);
+  const en = separarNomeLiga(item.sNomeIdiomaSecundario || principal);
   const img = String(item.sPathImage || '');
+  const numero = pt.numero || en.numero, total = pt.total || en.total;
+  // "1004-04/140" na Liga = "1004/04" impresso na carta (Gem Packs chineses)
+  const composto = String(numero).match(/^(\d+)-(\d+)$/);
   return {
     id: item.__key || `${pt.nome}|${pt.numero}/${pt.total}`,
     nome: pt.nome, // nome na Liga (português quando existe)
     nomeEN: en.nome,
-    numero: pt.numero || en.numero,
-    total: pt.total || en.total,
-    nomeLiga: decodificar(item.sNomeIdiomaPrincipal).trim(), // texto exato usado no link da Liga
+    numero,
+    total,
+    impresso: composto ? { numero: composto[1], total: composto[2] } : null,
+    nomeLiga: principal, // texto exato usado no link da Liga
     edicao: edicaoDoItem(item),
     sigla: siglaDaEdicao(edicaoDoItem(item)),
     imagem: img ? (img.startsWith('//') ? `https:${img}` : img) : '',
@@ -213,11 +219,11 @@ export function pontuar(c, { nome, numero, total, qualidadeNome = 1, trechosNume
   const noRodape = apareceNosTrechos(c.numero, trechosNumero);
   if (numero || trechosNumero.length) {
     pesos.push(0.45);
-    notas.push(Math.max(numero ? semelhancaNumero(c.numero, numero) : 0, noRodape ? 0.95 : 0));
+    notas.push(Math.max(numero ? semelhancaNumero(c.numero, numero) : 0, numero && c.impresso ? semelhancaNumero(c.impresso.numero, numero) : 0, noRodape ? 0.95 : 0));
   }
   if (total || trechosNumero.length) {
     pesos.push(0.2);
-    notas.push(Math.max(total ? semelhancaNumero(c.total, total) : 0, totalNosTrechos(c.numero, c.total, trechosNumero) ? 0.9 : 0));
+    notas.push(Math.max(total ? semelhancaNumero(c.total, total) : 0, total && c.impresso ? semelhancaNumero(c.impresso.total, total) : 0, totalNosTrechos(c.numero, c.total, trechosNumero) ? 0.9 : 0));
   }
   const nomeUtil = nome && (nome.match(/\p{L}/gu) || []).length >= 3;
   if (nomeUtil) { pesos.push(0.35 * Math.max(0.2, qualidadeNome)); notas.push(semelhancaNome(c, nome)); }
@@ -230,8 +236,10 @@ export const SUFIXOS_NOME = ['ex', 'V', 'VMAX', 'VSTAR', 'GX', 'EX', 'Prime', 'L
 const SUFIXO = new Set(SUFIXOS_NOME.map((x) => chave(x)));
 
 // O nome do candidato é o nome lido, talvez com um desses sufixos? (0 a 1, como semelhanca)
+const semQualificador = (n) => String(n ?? '').replace(/\s*\([^()]*\)\s*$/, '').trim();
 export function semelhancaNome(c, nome) {
-  const direta = Math.max(semelhanca(c.nome, nome), semelhanca(c.nomeEN, nome));
+  const direta = Math.max(semelhanca(c.nome, nome), semelhanca(c.nomeEN, nome),
+    semelhanca(semQualificador(c.nome), nome), semelhanca(semQualificador(c.nomeEN), nome));
   if (direta >= 0.8 || !nome) return direta;
   const lidas = String(nome).trim().split(/\s+/).map(chave);
   for (const n of [c.nome, c.nomeEN]) {
@@ -292,14 +300,20 @@ export function filtrarPorIdioma(lista, idioma) {
 export function filtrarPorTotal(lista, { numero, total } = {}) {
   const t = semZeros(total), n = semZeros(numero);
   if (!t || !n) return lista;
-  const exatas = lista.filter((c) => semZeros(c.numero) === n && semZeros(c.total) === t);
-  return exatas.length ? lista.filter((c) => semZeros(c.total) === t) : lista;
+  const bate = (c) => (semZeros(c.numero) === n && semZeros(c.total) === t)
+    || (c.impresso && semZeros(c.impresso.numero) === n && semZeros(c.impresso.total) === t);
+  const exatas = lista.filter(bate);
+  return exatas.length ? lista.filter((c) => bate(c) || semZeros(c.total) === t) : lista;
 }
 
 // Consultas a fazer, da mais específica para a mais solta.
 // Como no liga_price_sheets: "Nome (nº/total)", "Nome nº/total", só o nome e só o número (com e sem zeros).
 // Para tolerar erros do OCR, também: último dígito do total em aberto, número sem total e só o total.
-export function consultas({ nome, numero, total, qualidadeNome = 1, trechosNumero = [] }) {
+// Sufixo que a Liga põe no número das edições asiáticas que repetem a numeração de outra ("030C/103").
+const SUFIXO_IDIOMA = { CH: ['C'], CHS: ['C'], ZH: ['C'], KO: ['K'], KR: ['K'], JP: ['JP'] };
+export const asiatico = (idioma) => !!SUFIXO_IDIOMA[String(idioma ?? '').toUpperCase()];
+
+export function consultas({ nome, numero, total, qualidadeNome = 1, trechosNumero = [], idioma = '' }) {
   const q = [];
   const n = semZeros(numero), t = semZeros(total);
   const nomeLimpo = semAcento(String(nome ?? '').replace(/[’‘`´]/g, "'")).replace(/[^a-z0-9 '\-.]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -313,6 +327,12 @@ export function consultas({ nome, numero, total, qualidadeNome = 1, trechosNumer
   q.push(...nums);
   if (n && /^\d{2,}$/.test(t)) q.push(`${pad(n)}/${pad(t).slice(0, -1)}`);
   if (n) q.push(`${pad(n)}/`);
+  // "1004/04" impresso (Gem Packs chineses) é "1004-04/140" na Liga
+  if (/^\d{3,}$/.test(n) && /^\d{1,2}$/.test(t)) q.push(`(${n}-${pad(t).slice(-2)}`);
+  // carta chinesa/coreana/japonesa: a versão dela pode ter sufixo no número ("030C/103", "026K/069")
+  for (const s of SUFIXO_IDIOMA[String(idioma).toUpperCase()] || []) {
+    if (/^\d+$/.test(n)) q.push(t ? `${pad(n)}${s}/${pad(t)}` : `${pad(n)}${s}/`);
+  }
   // promo sem total ("XY644"): o símbolo ao lado do número costuma virar um dígito a mais -> "(XY64/", "(XY44/"
   const promo = !t && String(numero ?? '').toUpperCase().match(/^([A-Z]+)(\d{2,4})$/);
   if (promo) {
@@ -372,10 +392,39 @@ function pedir(consulta) {
 
 // Busca candidatos na Liga e devolve ordenados pela nota (campo "nota", de 0 a 1).
 // Para assim que achar uma carta com número, total e nome batendo (poupa chamadas).
+// Número e total do candidato como estão na Liga e, se diferente, como vêm impressos na carta ("1004-04/140" = "1004/04").
+const formas = (c) => [c, c.impresso].filter(Boolean);
+
+// Leitura confiável (Gemini): nome e número exatamente como na carta, poucas consultas. "Nome (090/084)";
+// carta asiática com sufixo ("Pikachu (030C/103"); Gem Pack chinês ("(1004-04"); promo ("Rayquaza (XY64/");
+// e, se nada bater, "Nome (090" (reimpressão com outro total, como "Gengar (094/30)").
+export function consultasExatas({ nome, numero, total, idioma = '' }) {
+  const q = [];
+  const nm = String(nome ?? '').replace(/[’‘`´]/g, "'").trim();
+  const n = String(numero ?? '').trim().toUpperCase(), t = String(total ?? '').trim().toUpperCase();
+  if (!n) return nm ? [nm] : [];
+  if (nm) q.push(t ? `${nm} (${n}/${t})` : `${nm} (${n}/`);
+  // só o número exato ("(94/102)"): acha o nome com sufixo de logotipo ("Gengar Prime (94/102)")
+  if (t && !asiatico(idioma)) q.push(`(${n}/${t})`);
+  for (const s of SUFIXO_IDIOMA[String(idioma).toUpperCase()] || []) if (/^\d+$/.test(n)) q.push(`${nm} (${n}${s}/`);
+  if (/^\d{3,}$/.test(n) && /^\d{1,2}$/.test(t)) q.push(`(${n}-${t.padStart(2, '0').slice(-2)}`);
+  if (nm) q.push(`${nm} (${n}`);
+  return [...new Set(q)];
+}
+
 export async function buscarCandidatos(lido) {
-  const lista = consultas(lido);
+  // leitura do Gemini: primeiro a busca exata; as tolerantes a erro de OCR só se ela não achar nada
+  const exatas = lido.exato ? consultasExatas(lido) : [];
+  const lista = [...new Set([...exatas, ...consultas(lido)])];
   const vistos = new Map();
+  // mesmo número (como na Liga ou como impresso) e mesmo nome (ou nome sem o sufixo de logotipo)
+  const achouExata = () => [...vistos.values()].some((c) => nomeBate(c, lido.nome) && formas(c).some((x) =>
+    semZeros(x.numero) === semZeros(lido.numero) && (!lido.total || !x.total || semZeros(x.total) === semZeros(lido.total) || c.impresso)));
   let erro = null, algumaDeuCerto = false;
+  const nomeBom = lido.nome && (lido.qualidadeNome ?? 1) >= 0.5 && chave(lido.nome).length >= 3;
+  // as cartas com o nome lido vêm antes: o corte em 12 não pode deixá-las de fora
+  const peso = (c) => (nomeBom && nomeBate(c, lido.nome) ? 1 : 0);
+  const ordenar = () => [...vistos.values()].sort((a, b) => peso(b) - peso(a) || b.nota - a.nota).slice(0, 12);
   let nomeNaLiga = null; // a busca só pelo nome achou alguma carta? (false = nome mal lido, que a Liga não conhece)
   for (const consulta of lista) {
     try {
@@ -392,17 +441,21 @@ export async function buscarCandidatos(lido) {
     }
     // nome e número batem: chega (sem nome legível, segue buscando os números alternativos)
     // só quando nome, número E total batem exatamente (uma nota alta com total diferente pode ser dígito mal lido)
-    const exata = [...vistos.values()].some((c) => semZeros(c.numero) === semZeros(lido.numero) && lido.total
-      && semZeros(c.total) === semZeros(lido.total) && Math.max(semelhanca(c.nome, lido.nome || ''), semelhanca(c.nomeEN, lido.nome || '')) >= 0.85);
-    if ((lido.qualidadeNome ?? 1) >= 0.5 && exata) break;
+    const exata = [...vistos.values()].some((c) => lido.total && formas(c).some((x) => semZeros(x.numero) === semZeros(lido.numero)
+      && semZeros(x.total) === semZeros(lido.total)) && semelhancaNome(c, lido.nome || '') >= 0.85);
+    // carta asiática: a impressão exata sem sufixo costuma ser de outro idioma; continua até buscar as de sufixo
+    if ((lido.qualidadeNome ?? 1) >= 0.5 && exata && !asiatico(lido.idioma)) break;
+    // busca exata (Gemini): achou o mesmo nome e número, chega. Carta asiática: só depois de buscar a versão com
+    // sufixo ("030C/103"), que é a 2ª consulta exata
+    if (exatas.includes(consulta) && achouExata() && (!asiatico(lido.idioma) || exatas.indexOf(consulta) >= 1)) break;
   }
+  if (exatas.length && achouExata()) return ordenar();
   // Nome legível, mas nenhuma carta com esse nome bate com o número ou o total lidos. Duas causas comuns:
   //  - o primeiro dígito do número se perdeu ("4/102" lido de "94/102"): busca "Gengar (014" ... "Gengar (094";
   //    reimpressões como a coleção clássica de 30 anos ficam na Liga com outro total ("Gengar (094/30)");
   //  - falta o sufixo que vem como logotipo ("Gengar Prime").
-  const nomeBom = lido.nome && (lido.qualidadeNome ?? 1) >= 0.5 && chave(lido.nome).length >= 3;
-  const achou = () => [...vistos.values()].some((c) => nomeBate(c, lido.nome)
-    && ((lido.total && semZeros(c.total) === semZeros(lido.total)) || (lido.numero && semelhancaNumero(c.numero, lido.numero) >= 0.9)));
+  const achou = () => [...vistos.values()].some((c) => nomeBate(c, lido.nome) && formas(c).some((x) =>
+    (lido.total && semZeros(x.total) === semZeros(lido.total)) || (lido.numero && semelhancaNumero(x.numero, lido.numero) >= 0.9)));
   // se nem o nome sozinho existe na Liga, "Nome Prime" e "Nome (094" também não existem: não perde tempo
   if (nomeBom && nomeNaLiga !== false && !achou()) {
     const nomeBusca = lido.nome.trim();
@@ -424,7 +477,5 @@ export async function buscarCandidatos(lido) {
     }
   }
   if (!algumaDeuCerto && erro) throw erro;
-  // as cartas com o nome lido vêm antes: o corte em 12 não pode deixá-las de fora
-  const peso = (c) => (nomeBom && nomeBate(c, lido.nome) ? 1 : 0);
-  return [...vistos.values()].sort((a, b) => peso(b) - peso(a) || b.nota - a.nota).slice(0, 12);
+  return ordenar();
 }

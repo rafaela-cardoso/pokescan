@@ -91,6 +91,7 @@ function mostrarDestino() {
 // ---------- telas ----------
 function abrirAjustes() {
   $('telaScanner').hidden = true;
+  $('telaFila').hidden = true;
   $('telaAjustes').hidden = false;
   camera.desligar();
   $('clienteId').value = cfg.clienteId;
@@ -281,19 +282,31 @@ async function processar(canvas, { automatica = false } = {}) {
 }
 
 // ---------- várias cartas (fila) ----------
-// Cada foto entra na fila e é lida em segundo plano, uma por vez (a cota grátis do Gemini é de 15 por minuto).
-// "Revisar fila" abre as lidas uma a uma, já buscando na Liga; ao gravar ou descartar, abre a próxima.
-// A fila fica só na memória: recarregar o app a perde.
-const fila = []; // { canvas, automatica, estado: 'lendo' | 'pronta' | 'vazia', lido }
+// Cada foto entra na fila e é lida em segundo plano, uma por vez (a cota grátis do Gemini é de 15 por minuto), e já
+// buscada na Liga. A fila tem tela própria: cada carta é um menu que abre e fecha, com caixa de seleção e as opções
+// de revisão; o que você muda fica guardado na carta até enviar ou descartar. No fim, "Enviar selecionadas" e
+// "Descartar selecionadas". "Escanear mais cartas" volta para a câmera sem perder a fila. A fila fica só na memória.
+const fila = []; // { id, canvas, automatica, estado: 'lendo' | 'buscando' | 'pronta', lido, candidatos, atual, form, ... }
 let lendoFila = false;
+let proximoId = 1;
 
 function enfileirar(canvas, automatica) {
-  fila.push({ canvas, automatica, estado: 'lendo' });
+  const item = { id: proximoId++, canvas, automatica, estado: 'lendo', selecionada: false };
+  fila.push(item);
   avisar(`Carta ${fila.length} na fila`);
+  desenharItem(item);
   mostrarFila();
   lerFila();
 }
 
+function tirarDaFila(item) {
+  const i = fila.indexOf(item);
+  if (i >= 0) fila.splice(i, 1);
+  item.el?.remove();
+  mostrarFila();
+}
+
+// Lê (Gemini; OCR em último caso) e busca na Liga, uma carta por vez.
 async function lerFila() {
   if (lendoFila) return;
   lendoFila = true;
@@ -301,15 +314,22 @@ async function lerFila() {
     for (let item; (item = fila.find((i) => i.estado === 'lendo'));) {
       try {
         item.lido = await lerImagemDaCarta(item.canvas, { aoProgresso: () => {} });
-        item.estado = temCarta(item.lido) ? 'pronta' : 'vazia';
       } catch {
-        item.estado = 'vazia';
+        item.lido = null;
       }
-      if (item.estado === 'vazia') {
-        fila.splice(fila.indexOf(item), 1);
+      if (!temCarta(item.lido)) {
+        tirarDaFila(item);
         if (item.automatica) detector.ignorar();
         else avisar('Não achei carta numa das fotos da fila.');
+        continue;
       }
+      item.estado = 'buscando';
+      desenharItem(item);
+      await consultarLiga(item.lido, item);
+      iniciarFormulario(item);
+      item.estado = 'pronta';
+      item.selecionada = !!item.atual; // já marcada quando a carta da Liga foi escolhida
+      desenharItem(item);
       mostrarFila();
     }
   } finally {
@@ -317,35 +337,265 @@ async function lerFila() {
   }
 }
 
-function mostrarFila() {
-  const prontas = fila.filter((i) => i.estado === 'pronta').length;
-  const lendo = fila.filter((i) => i.estado === 'lendo').length;
-  $('statusFila').textContent = [lendo && `lendo ${lendo}…`, prontas && `${prontas} pronta(s)`].filter(Boolean).join(' · ');
-  const b = $('revisarFila');
-  b.hidden = !prontas;
-  b.textContent = `Revisar fila (${prontas})`;
-  b.disabled = ocupado || !!leitura;
+// Valores iniciais da revisão (os mesmos da tela de uma carta).
+function iniciarFormulario(item) {
+  const { lido } = item;
+  item.atual = item.escolha || null;
+  item.form = {
+    quantidade: 1,
+    idioma: lido.idioma ? idiomaDetectado(lido.idioma) : cfg.idioma,
+    estado: cfg.estado,
+    extra: lido.extraDetectado || cfg.extra,
+  };
+  aplicarCandidatoNoItem(item, item.atual);
 }
 
-async function revisarProxima() {
-  if (ocupado || leitura) return;
-  const i = fila.findIndex((x) => x.estado === 'pronta');
-  if (i < 0) return mostrarFila();
-  const [item] = fila.splice(i, 1);
-  ocupado = true;
-  $('lendo').hidden = false;
-  $('ler').disabled = true;
+function aplicarCandidatoNoItem(item, c) {
+  const { lido } = item;
+  item.atual = c || null;
+  Object.assign(item.form, {
+    nome: c ? (cfg.nomeEmIngles ? c.nomeEN || c.nome : c.nome || c.nomeEN) : lido.nome,
+    numero: c ? c.numero : lido.numero,
+    total: c ? c.total : lido.total,
+    sigla: c ? siglaParaLink(c, lido.siglas || []) : (lido.siglas?.[0] || ''),
+  });
+}
+
+const tituloDoItem = (item) => {
+  const f = item.form;
+  if (!f) return item.lido?.nome || 'Carta';
+  return formatarCarta({ nome: f.nome, numero: f.numero, total: f.total }) + (f.sigla ? ` · ${f.sigla}` : '');
+};
+
+function estadoDoItem(item) {
+  if (item.estado === 'lendo') return ['lendo', 'lendo…'];
+  if (item.estado === 'buscando') return ['lendo', 'buscando na Liga…'];
+  if (!item.candidatos?.length) return ['ruim', 'não achei na Liga'];
+  if (item.confiavel && item.atual) return ['bom', 'pronta'];
+  return ['medio', item.atual ? 'confira' : 'escolha a carta'];
+}
+
+// Cria (uma vez) ou atualiza o menu da carta. O corpo é montado quando a carta fica pronta e não é refeito depois:
+// assim o que você digitou continua lá ao fechar e abrir.
+function desenharItem(item) {
+  if (!item.el) {
+    const d = document.createElement('details');
+    d.className = 'item-fila';
+    const s = document.createElement('summary');
+    const caixa = document.createElement('input');
+    caixa.type = 'checkbox';
+    caixa.setAttribute('aria-label', 'Selecionar carta');
+    caixa.addEventListener('click', (ev) => ev.stopPropagation()); // marcar não abre o menu
+    caixa.addEventListener('change', () => { item.selecionada = caixa.checked; mostrarFila(); });
+    const mini = document.createElement('canvas');
+    mini.width = 80; mini.height = 112;
+    mini.getContext('2d').drawImage(item.canvas, 0, 0, mini.width, mini.height);
+    const titulo = document.createElement('span');
+    titulo.className = 'titulo-item';
+    const b = document.createElement('b');
+    const sub = document.createElement('span');
+    titulo.append(b, sub);
+    const est = document.createElement('span');
+    est.className = 'estado-item';
+    const seta = document.createElement('span');
+    seta.className = 'seta';
+    seta.textContent = '▾';
+    s.append(caixa, mini, titulo, est, seta);
+    const corpo = document.createElement('div');
+    corpo.className = 'corpo';
+    d.append(s, corpo);
+    item.el = d;
+    item.ui = { caixa, b, sub, est, corpo };
+    $('listaFila').appendChild(d);
+  }
+  const { caixa, b, sub, est, corpo } = item.ui;
+  caixa.checked = !!item.selecionada;
+  caixa.disabled = item.estado !== 'pronta';
+  b.textContent = tituloDoItem(item);
+  const f = item.form;
+  sub.textContent = f ? [`${f.quantidade}x`, f.estado, f.extra !== 'Normal' ? f.extra : '', f.idioma].filter(Boolean).join(' · ') : 'Carta na fila';
+  const [classe, texto] = estadoDoItem(item);
+  est.className = `estado-item ${classe}`;
+  est.textContent = texto;
+  if (item.estado === 'pronta' && !corpo.childElementCount) montarCorpo(item);
+}
+
+function campoTexto(rotulo, valor, aoMudar, { curto = false, tipo = 'text' } = {}) {
+  const l = document.createElement('label');
+  l.className = `campo${curto ? ' curto' : ''}`;
+  const sp = document.createElement('span');
+  sp.textContent = rotulo;
+  const i = document.createElement('input');
+  i.type = tipo;
+  i.autocomplete = 'off';
+  i.value = valor ?? '';
+  if (tipo === 'number') i.min = '1';
+  i.addEventListener('input', () => aoMudar(i.value));
+  l.append(sp, i);
+  return [l, i];
+}
+
+function montarCorpo(item) {
+  const { corpo } = item.ui;
+  const { lido } = item;
+  corpo.innerHTML = '';
+
+  const resumo = document.createElement('p');
+  resumo.className = 'resumo';
+  resumo.textContent = [`Lido por: ${lido.lidoPor || 'OCR'}`, lido.avisoGemini, item.erro && `Liga: ${item.erro}`].filter(Boolean).join(' · ');
+  corpo.appendChild(resumo);
+
+  // cartas da Liga
+  const campoGrade = document.createElement('div');
+  campoGrade.className = 'campo';
+  const rotGrade = document.createElement('span');
+  rotGrade.textContent = item.candidatos.length ? 'Na Liga Pokémon — toque na carta certa' : 'Nada encontrado na Liga';
+  const grade = document.createElement('div');
+  grade.className = 'candidatos';
+  campoGrade.append(rotGrade, grade);
+  corpo.appendChild(campoGrade);
+
+  const campos = {};
+  const link = document.createElement('a');
+  link.className = 'link-liga';
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = 'Ver preços desta carta na Liga Pokémon ↗';
+  const atualizar = () => {
+    for (const el of grade.children) el.classList.toggle('ativo', el.dataset.id === (item.atual ? item.atual.id : ''));
+    link.hidden = !item.atual;
+    if (item.atual) link.href = linkLiga(item.atual.nomeLiga, { sigla: item.form.sigla, numero: item.atual.numero });
+    desenharItem(item);
+  };
+  const escolher = (c) => {
+    aplicarCandidatoNoItem(item, c);
+    for (const k of ['nome', 'numero', 'total', 'sigla']) campos[k].value = item.form[k] ?? '';
+    if (c) confirmarIdiomaDaEdicao(c, idiomaParaEdicoes(lido));
+    atualizar();
+  };
+  for (const c of item.candidatos) {
+    const bt = cartaoCandidato(c, () => escolher(c));
+    grade.appendChild(bt);
+  }
+  if (item.candidatos.length) {
+    const nenhuma = document.createElement('button');
+    nenhuma.type = 'button';
+    nenhuma.className = 'candidato nenhuma';
+    nenhuma.dataset.id = '';
+    nenhuma.textContent = 'Nenhuma destas';
+    nenhuma.addEventListener('click', () => escolher(null));
+    grade.appendChild(nenhuma);
+  }
+
+  const muda = (k) => (v) => { item.form[k] = v; atualizar(); };
+  const [lNome, iNome] = campoTexto('Nome', item.form.nome, muda('nome'));
+  campos.nome = iNome;
+  corpo.appendChild(lNome);
+  const linha = document.createElement('div');
+  linha.className = 'linha';
+  for (const [k, rot, op] of [['numero', 'Número'], ['total', 'Total'], ['sigla', 'Coleção', { curto: true }], ['quantidade', 'Qtd.', { curto: true, tipo: 'number' }]]) {
+    const [l, i] = campoTexto(rot, item.form[k], k === 'quantidade' ? (v) => { item.form.quantidade = Math.max(1, Number(v) || 1); atualizar(); }
+      : k === 'sigla' ? (v) => { item.form.sigla = v.trim().toUpperCase(); atualizar(); } : muda(k), op);
+    campos[k] = i;
+    linha.appendChild(l);
+  }
+  corpo.append(linha, link);
+
+  for (const [k, rot, valores] of [['idioma', 'Idioma', IDIOMAS], ['estado', 'Estado', ESTADOS]]) {
+    const c = document.createElement('div');
+    c.className = 'campo';
+    const sp = document.createElement('span');
+    sp.textContent = rot;
+    const ch = document.createElement('div');
+    ch.className = 'chips';
+    chips(ch, valores, (v) => v, (v) => { item.form[k] = v; atualizar(); });
+    marcar(ch, item.form[k]);
+    c.append(sp, ch);
+    corpo.appendChild(c);
+  }
+  const lExtra = document.createElement('label');
+  lExtra.className = 'campo';
+  const spE = document.createElement('span');
+  spE.textContent = lido.extraDetectado ? `Extra (sugerido ${lido.extraFonte === 'Gemini' ? 'pelo Gemini' : 'pela imagem'}: confira)` : 'Extra';
+  const sel = document.createElement('select');
+  for (const e of EXTRAS) sel.add(new Option(e, e));
+  sel.value = item.form.extra;
+  sel.addEventListener('change', () => { item.form.extra = sel.value; atualizar(); });
+  lExtra.append(spE, sel);
+  corpo.appendChild(lExtra);
+
+  atualizar();
+}
+
+// Grava as cartas da fila na planilha, uma por vez. Gravada (ou que virou pendente) sai da fila.
+let enviandoFila = false;
+async function enviarItens(itens) {
+  if (enviandoFila) return;
+  const prontos = itens.filter((i) => i.estado === 'pronta');
+  if (!prontos.length) return avisar('Nenhuma carta pronta selecionada.');
+  // sem planilha escolhida, nada sai da fila
+  if (!idDaPlanilha(cfg.planilha)) return avisar('Escolha a planilha em Configurar antes de enviar.', 'erro');
+  enviandoFila = true;
   mostrarFila();
+  let ok = 0, falhas = 0;
   try {
-    await revisar(item.canvas, item.lido);
-  } catch (e) {
-    avisar(e.message || 'Falha na busca.', 'erro');
+    for (const item of prontos) {
+      let registro;
+      try {
+        registro = registroDe(item.form, item.atual);
+      } catch (e) {
+        avisar(`${tituloDoItem(item)}: ${e.message}`, 'erro');
+        item.el.open = true;
+        falhas++;
+        continue;
+      }
+      const h = await gravarRegistro(registro, item.canvas);
+      tirarDaFila(item);
+      if (h.situacao === 'ok') ok++; else falhas++;
+      if (h.redirecionando) break; // saindo para o login do Google: o resto fica na fila
+    }
   } finally {
-    ocupado = false;
-    $('lendo').hidden = true;
-    $('ler').disabled = false;
+    enviandoFila = false;
     mostrarFila();
   }
+  if (ok && !falhas) avisar(`✓ ${ok} carta(s) gravada(s)`, 'ok');
+  else if (ok || falhas) avisar(`${ok} gravada(s), ${falhas} não (veja as pendentes e a fila)`, falhas ? 'erro' : 'ok');
+}
+
+function descartarItens(itens) {
+  if (!itens.length) return;
+  if (!confirm(`Descartar ${itens.length} carta(s) da fila?`)) return;
+  itens.forEach(tirarDaFila);
+}
+
+function mostrarFila() {
+  const lendo = fila.filter((i) => i.estado !== 'pronta').length;
+  const prontas = fila.filter((i) => i.estado === 'pronta');
+  const sel = prontas.filter((i) => i.selecionada);
+  $('statusFila').textContent = [lendo && `lendo ${lendo}…`, prontas.length && `${prontas.length} pronta(s)`].filter(Boolean).join(' · ');
+  $('abrirFila').hidden = !fila.length;
+  $('abrirFila').textContent = `Abrir fila (${fila.length})`;
+  $('filaVazia').hidden = fila.length > 0;
+  $('enviarSelecionadas').textContent = `Enviar selecionadas (${sel.length})`;
+  $('descartarSelecionadas').textContent = `Descartar selecionadas (${sel.length})`;
+  $('enviarSelecionadas').disabled = !sel.length || enviandoFila;
+  $('descartarSelecionadas').disabled = !sel.length || enviandoFila;
+  $('selecionarTodas').checked = prontas.length > 0 && sel.length === prontas.length;
+}
+
+function abrirFila() {
+  $('telaScanner').hidden = true;
+  $('telaAjustes').hidden = true;
+  $('telaFila').hidden = false;
+  camera.desligar();
+  window.scrollTo(0, 0);
+  mostrarFila();
+}
+
+function voltarAEscanear() {
+  $('telaFila').hidden = true;
+  $('telaScanner').hidden = false;
+  iniciarCamera();
 }
 
 // ---------- foto automática ----------
@@ -375,29 +625,31 @@ function vigiarMoldura() {
     const m = $('moldura');
     const livre = cfg.fotoAutomatica && camera.ligada() && !$('telaScanner').hidden && !document.hidden && !fotografando
       && (cfg.modoFila || (!ocupado && !leitura)); // revisão aberta: não atropela
-    if (!livre) { m.classList.remove('firme'); return; }
+    if (!livre) { m.classList.remove('firme'); if (cfg.fotoAutomatica && leitura) $('dica').textContent = 'Foto automática: grave ou descarte a carta aberta'; return; }
     const q = camera.miniaturaDaMoldura($('video'), LARG_MINI, ALT_MINI);
     if (!q) return;
     const disparar = detector.quadro(q);
     m.classList.toggle('firme', detector.parado >= 2);
+    // dica na tela: mostra o que a foto automática está vendo (ajuda a achar o ponto certo no celular)
+    $('dica').textContent = detector.parado >= 1 ? 'Segure parado…' : `Foto automática: encaixe a carta e segure parado (movimento ${Math.round(detector.movimento)})`;
     if (disparar) tirarFoto({ automatica: true });
   }, 300);
 }
 
 // Busca na Liga com as leituras do número (até 2) e escolhe o candidato, se a nota permitir.
-async function consultarLiga(lido) {
+async function consultarLiga(lido, alvo = leitura) {
   const vistos = new Map();
   const leiturasNumero = lido.numeros?.length ? lido.numeros : [{ numero: lido.numero, total: lido.total }];
   try {
     for (const n of leiturasNumero.slice(0, 2)) {
-      for (const c of await buscarCandidatos({ nome: lido.nome, qualidadeNome: lido.qualidadeNome ?? 1, numero: n.numero, total: n.total, trechosNumero: lido.trechosNumero || [] })) {
+      for (const c of await buscarCandidatos({ nome: lido.nome, qualidadeNome: lido.qualidadeNome ?? 1, numero: n.numero, total: n.total, trechosNumero: lido.trechosNumero || [], idioma: lido.idioma, exato: lido.lidoPor === 'Gemini' })) {
         const antes = vistos.get(c.id);
         if (!antes || antes.nota < c.nota) vistos.set(c.id, c);
       }
     }
-    leitura.erro = '';
+    alvo.erro = '';
   } catch (e) {
-    leitura.erro = e.message;
+    alvo.erro = e.message;
   }
   // só cartas com o nome lido, do idioma da carta escaneada e da mesma coleção (total) — cada filtro só vale se
   // sobrar alguma carta, para nunca esconder a certa por causa de uma leitura ruim
@@ -413,17 +665,17 @@ async function consultarLiga(lido) {
   lista = lista.slice(0, 12);
   const [a, b] = lista;
   const folga = a ? a.nota - (b?.nota ?? 0) : 0;
-  leitura.candidatos = lista;
+  alvo.candidatos = lista;
   // escolhe sozinho só quando o primeiro se destaca; senão, você toca na carta certa
-  leitura.escolha = a && a.nota >= 0.6 && folga >= 0.05 ? a : null;
+  alvo.escolha = a && a.nota >= 0.6 && folga >= 0.05 ? a : null;
   // sem nome legível só o número sustenta a escolha: sempre pede conferência
-  leitura.confiavel = !!(a && a.nota >= CONFIANCA_ALTA && folga >= 0.1 && (lido.qualidadeNome ?? 1) >= 0.5);
+  alvo.confiavel = !!(a && a.nota >= CONFIANCA_ALTA && folga >= 0.1 && (lido.qualidadeNome ?? 1) >= 0.5);
 }
 
 // Carta da Liga com o número (e o total, se lido) igual ao da leitura: o palpite de idioma da edição não a esconde.
 const semZerosCarta = (s) => numeroCatalogo(String(s ?? '').toUpperCase());
-const numeroExato = (lido) => (c) => (lido.numeros || []).some((n) => n.numero
-  && semZerosCarta(c.numero) === semZerosCarta(n.numero) && (!n.total || semZerosCarta(c.total) === semZerosCarta(n.total)));
+const numeroExato = (lido) => (c) => (lido.numeros || []).some((n) => n.numero && [c, c.impresso].filter(Boolean).some((x) =>
+  semZerosCarta(x.numero) === semZerosCarta(n.numero) && (!n.total || semZerosCarta(x.total) === semZerosCarta(n.total))));
 
 // Lê pelo OCR o idioma das edições sugeridas (imagens da Liga, via intermediário) e tira as de outro idioma.
 // Roda depois de mostrar a grade; se você já leu outra carta, para.
@@ -486,7 +738,7 @@ function atualizarLink() {
   if (leitura?.atual) link.href = linkAtual();
 }
 
-function cartaoCandidato(c) {
+function cartaoCandidato(c, aoEscolher = null) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'candidato';
@@ -503,10 +755,10 @@ function cartaoCandidato(c) {
   num.className = 'num';
   num.textContent = `${c.numero}/${c.total}${c.sigla ? ` · ${c.sigla}` : ''}`;
   b.append(img, nome, num);
-  b.addEventListener('click', () => {
+  b.addEventListener('click', aoEscolher || (() => {
     aplicarCandidato(c);
     if (leitura) confirmarIdiomaDaEdicao(c, idiomaParaEdicoes(leitura.lido));
-  });
+  }));
   return b;
 }
 
@@ -544,8 +796,6 @@ function mostrarResumo() {
   if (lido.siglas?.length) partes.push(`Coleção lida: ${lido.siglas.join(' ou ')}`);
   partes.push(`Lido por: ${lido.lidoPor || 'OCR'}`);
   if (lido.avisoGemini) partes.push(lido.avisoGemini);
-  const naFila = fila.filter((i) => i.estado !== 'vazia').length;
-  if (naFila) partes.push(`Na fila: mais ${naFila}`);
   partes.push(`Idioma: ${NOMES_IDIOMA[lido.idioma] || 'não identificado'}`);
   if (lido.extraDetectado) partes.push(`Extra ${lido.extraFonte === 'Gemini' ? 'pelo Gemini' : 'pela imagem'}: ${lido.extraDetectado} (confira)`);
   else if (lido.extraFonte === 'Gemini') partes.push('Extra pelo Gemini: Normal (confira)');
@@ -584,30 +834,33 @@ async function buscarDeNovo() {
 function descartar() {
   leitura = null;
   $('resultado').hidden = true;
-  mostrarFila();
-  if (fila.some((i) => i.estado === 'pronta')) setTimeout(revisarProxima, 400); // próxima carta da fila
-  else window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ---------- gravação ----------
 const agora = () => new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 
-function montarRegistro() {
-  const c = leitura?.atual;
-  const nome = $('nome').value.trim();
-  const numero = $('numero').value.trim();
-  const total = $('total').value.trim();
+// Só o que vai para a planilha (Quantidade, Carta, Estado, Extra, Idioma, Link liga) + a hora, para o histórico.
+// Vale para a carta aberta na tela e para cada carta da fila.
+function registroDe(f, atual) {
+  const nome = String(f.nome ?? '').trim(), numero = String(f.numero ?? '').trim(), total = String(f.total ?? '').trim();
   if (!nome && !numero) throw new Error('Preencha ao menos o nome ou o número da carta.');
-  // só o que vai para a planilha (Quantidade, Carta, Estado, Extra, Idioma, Link liga) + a hora, para o histórico
   return {
-    quantidade: Math.max(1, Number($('quantidade').value) || 1),
+    quantidade: Math.max(1, Number(f.quantidade) || 1),
     carta: formatarCarta({ nome, numero, total }),
-    estado: marcado($('chipsEstado')),
-    extra: $('extra').value === 'Normal' ? '' : $('extra').value, // vazio = sem extra (liga_price_sheets)
-    idioma: marcado($('chipsIdioma')),
-    liga: c ? linkAtual() : '',
+    estado: f.estado,
+    extra: f.extra === 'Normal' ? '' : f.extra, // vazio = sem extra (liga_price_sheets)
+    idioma: f.idioma,
+    liga: atual ? linkLiga(atual.nomeLiga, { sigla: String(f.sigla ?? '').trim().toUpperCase(), numero: atual.numero }) : '',
     quando: agora(),
   };
+}
+
+function montarRegistro() {
+  return registroDe({
+    nome: $('nome').value, numero: $('numero').value, total: $('total').value, quantidade: $('quantidade').value,
+    estado: marcado($('chipsEstado')), extra: $('extra').value, idioma: marcado($('chipsIdioma')), sigla: siglaDigitada(),
+  }, leitura?.atual);
 }
 
 // Link com "gid=" e aba ainda não escolhida: descobre o nome da aba pelo gid (precisa do login).
@@ -651,10 +904,10 @@ const fotosGuardando = new Map(); // id -> promessa de guardar a foto no celular
 
 // Guarda a foto da carta no celular ANTES de gravar (sobrevive ao login por redirecionamento e à falta de rede).
 // Não espera terminar: o pedido de login precisa sair no mesmo toque. Devolve o item de foto do histórico, ou null.
-function prepararFoto(registro) {
-  if (!querFoto() || !leitura?.canvas) return null;
+function prepararFoto(registro, canvas) {
+  if (!querFoto() || !canvas) return null;
   const id = `foto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const guardando = fotoEmJpeg(leitura.canvas).then((img) => guardarFoto(id, img));
+  const guardando = fotoEmJpeg(canvas).then((img) => guardarFoto(id, img));
   fotosGuardando.set(id, guardando);
   conta.esperarAntesDeSair(guardando);
   return { id, nome: nomeDaFoto(registro.carta), situacao: 'pendente' };
@@ -685,36 +938,53 @@ async function subirFoto(h) {
   }
 }
 
-async function salvar() {
-  let registro;
-  try { registro = montarRegistro(); } catch (e) { return avisar(e.message, 'erro'); }
+// Grava uma carta (planilha + foto no Drive, se ligado) e põe no histórico. Devolve o item do histórico.
+// O login é pedido no mesmo toque: não há nenhum await antes do enviar.
+async function gravarRegistro(registro, canvas, { avisos = true } = {}) {
   const h = { registro, situacao: 'pendente' };
-  const foto = prepararFoto(registro);
+  const foto = prepararFoto(registro, canvas);
   if (foto) h.foto = foto;
-  $('salvar').disabled = true;
   try {
     const r = await enviar(registro);
     Object.assign(h, { situacao: 'ok', linha: r.linha, somada: r.somada, total: r.quantidade });
-    avisar(r.somada
-      ? `✓ ${registro.carta}: já estava na linha ${r.linha}, quantidade agora ${r.quantidade}`
-      : `✓ ${registro.carta} gravada na linha ${r.linha}`, 'ok');
+    if (avisos) {
+      avisar(r.somada
+        ? `✓ ${registro.carta}: já estava na linha ${r.linha}, quantidade agora ${r.quantidade}`
+        : `✓ ${registro.carta} gravada na linha ${r.linha}`, 'ok');
+    }
   } catch (e) {
     h.erro = e.redirecionando ? 'esperando o login do Google' : e.message;
+    h.redirecionando = !!e.redirecionando;
     if (e.redirecionando) avisar('Abrindo o login do Google… a carta é gravada quando você voltar.');
-    else avisar(`Não gravei (${e.message}). Ficou na fila de pendentes.`, 'erro');
+    else if (avisos) avisar(`Não gravei (${e.message}). Ficou na fila de pendentes.`, 'erro');
+  }
+  historico.unshift(h);
+  historico = historico.slice(0, 50);
+  gravar('historico', historico);
+  mostrarHistorico();
+  if (h.situacao === 'ok' && h.foto) {
+    const subiu = await subirFoto(h);
+    if (avisos) {
+      if (subiu) avisar(`✓ ${registro.carta}: gravada na planilha e foto salva no Drive`, 'ok');
+      else avisar(`Carta gravada, mas a foto não subiu (${h.foto.erro}). Ficou pendente.`, 'erro');
+    }
+    gravar('historico', historico);
+    mostrarHistorico();
+  }
+  return h;
+}
+
+async function salvar() {
+  let registro;
+  try { registro = montarRegistro(); } catch (e) { return avisar(e.message, 'erro'); }
+  const canvas = leitura?.canvas;
+  $('salvar').disabled = true;
+  try {
+    const gravando = gravarRegistro(registro, canvas);
+    descartar();
+    await gravando;
   } finally {
     $('salvar').disabled = false;
-    historico.unshift(h);
-    historico = historico.slice(0, 50);
-    gravar('historico', historico);
-    mostrarHistorico();
-    descartar();
-  }
-  if (h.situacao === 'ok' && h.foto) {
-    if (await subirFoto(h)) avisar(`✓ ${registro.carta}: gravada na planilha e foto salva no Drive`, 'ok');
-    else avisar(`Carta gravada, mas a foto não subiu (${h.foto.erro}). Ficou pendente.`, 'erro');
-    gravar('historico', historico);
-    mostrarHistorico();
   }
 }
 
@@ -843,7 +1113,14 @@ function iniciar() {
   $('ligarCamera').addEventListener('click', iniciarCamera);
   $('lanterna').addEventListener('click', alternarLanterna);
   $('ler').addEventListener('click', () => tirarFoto());
-  $('revisarFila').addEventListener('click', revisarProxima);
+  $('abrirFila').addEventListener('click', abrirFila);
+  $('voltarEscanear').addEventListener('click', voltarAEscanear);
+  $('enviarSelecionadas').addEventListener('click', () => enviarItens(fila.filter((i) => i.selecionada)));
+  $('descartarSelecionadas').addEventListener('click', () => descartarItens(fila.filter((i) => i.selecionada)));
+  $('selecionarTodas').addEventListener('change', () => {
+    for (const i of fila) if (i.estado === 'pronta') { i.selecionada = $('selecionarTodas').checked; desenharItem(i); }
+    mostrarFila();
+  });
   $('limparGravadas').addEventListener('click', limparGravadas);
   for (const [id, chave] of [['fotoAutomatica', 'fotoAutomatica'], ['modoFila', 'modoFila']]) {
     $(id).checked = !!cfg[chave];

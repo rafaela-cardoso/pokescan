@@ -54,9 +54,11 @@ const MODELO_PADRAO = 'gemini-3.5-flash-lite';
 const MODELOS_RESERVA = ['gemini-3.8-flash'];
 const INSTRUCAO = [
   'Esta é a foto de uma carta de Pokémon TCG. Leia o que está IMPRESSO na carta e responda só com um JSON:',
-  '{"nome": string, "numero": string, "total": string, "sigla": string, "idioma": string, "extra": string}',
+  '{"nome": string, "nomeIngles": string, "numero": string, "total": string, "sigla": string, "idioma": string, "extra": string}',
   '- nome: o nome da carta como impresso, no idioma da carta, sem o HP/PS e sem "Básico"/"Estágio 1". Inclua sufixos',
   '  que fazem parte do nome (ex, V, VMAX, VSTAR, GX, EX, Prime, de Treinador como "Gabite da Cíntia").',
+  '- nomeIngles: o nome dessa carta em inglês, como nas cartas em inglês (ex.: "Pikachu", "Charizard ex",',
+  '  "Boss\'s Orders", "Cynthia\'s Gabite"). Para carta em inglês, igual ao nome.',
   '- numero e total: o número de coleção no rodapé, "090/084" -> numero "090", total "084" (mantenha zeros e letras,',
   '  como "TG05"/"TG30"). Promo sem total ("XY64", "SVP 045"): numero "XY64", total "".',
   '- sigla: as letras da coleção impressas numa caixinha antes do número (ex.: "PBL", "ASC"), sem o idioma miúdo',
