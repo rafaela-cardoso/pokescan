@@ -58,7 +58,7 @@
       <label class="modo"><input id="fotoAutomatica" type="checkbox"> Foto automática</label>
       <label class="modo"><input id="modoFila" type="checkbox"> Várias cartas (fila)</label>
       <span id="statusFila" class="status-fila"></span>
-      <button id="abrirFila" class="btn pequeno" type="button" hidden>Abrir fila</button>
+      <button id="abrirFila" class="btn pequeno" type="button">Abrir fila</button>
     </div>
 
 
@@ -127,6 +127,7 @@
         <button id="voltarEscanear" class="btn secundario" type="button">← Escanear mais cartas</button>
         <label class="selecionar-todas"><input id="selecionarTodas" type="checkbox"> Todas</label>
       </div>
+      <p id="carregandoFila" class="carregando-fila" hidden><span class="girando" aria-hidden="true"></span><span id="carregandoTexto">Lendo…</span></p>
       <p id="filaVazia" class="vazio">A fila está vazia. Ligue "Várias cartas (fila)" na câmera e escaneie.</p>
       <div id="listaFila" class="lista-fila"></div>
       <div class="acoes fila-acoes">

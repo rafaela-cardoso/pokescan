@@ -368,8 +368,6 @@ const tituloDoItem = (item) => {
 };
 
 function estadoDoItem(item) {
-  if (item.estado === 'lendo') return ['lendo', 'lendo…'];
-  if (item.estado === 'buscando') return ['lendo', 'buscando na Liga…'];
   if (!item.candidatos?.length) return ['ruim', 'não achei na Liga'];
   if (item.confiavel && item.atual) return ['bom', 'pronta'];
   return ['medio', item.atual ? 'confira' : 'escolha a carta'];
@@ -378,6 +376,7 @@ function estadoDoItem(item) {
 // Cria (uma vez) ou atualiza o menu da carta. O corpo é montado quando a carta fica pronta e não é refeito depois:
 // assim o que você digitou continua lá ao fechar e abrir.
 function desenharItem(item) {
+  if (item.estado !== 'pronta' && !item.el) return; // ainda lendo: só o contador acima da lista
   if (!item.el) {
     const d = document.createElement('details');
     d.className = 'item-fila';
@@ -573,9 +572,10 @@ function mostrarFila() {
   const prontas = fila.filter((i) => i.estado === 'pronta');
   const sel = prontas.filter((i) => i.selecionada);
   $('statusFila').textContent = [lendo && `lendo ${lendo}…`, prontas.length && `${prontas.length} pronta(s)`].filter(Boolean).join(' · ');
-  $('abrirFila').hidden = !fila.length;
-  $('abrirFila').textContent = `Abrir fila (${fila.length})`;
-  $('filaVazia').hidden = fila.length > 0;
+  $('abrirFila').textContent = fila.length ? `Abrir fila (${fila.length})` : 'Abrir fila';
+  $('filaVazia').hidden = prontas.length > 0;
+  $('carregandoFila').hidden = !lendo;
+  $('carregandoTexto').textContent = `Lendo ${lendo} carta(s)…`;
   $('enviarSelecionadas').textContent = `Enviar selecionadas (${sel.length})`;
   $('descartarSelecionadas').textContent = `Descartar selecionadas (${sel.length})`;
   $('enviarSelecionadas').disabled = !sel.length || enviandoFila;
@@ -1127,6 +1127,7 @@ function iniciar() {
     $(id).addEventListener('change', () => { cfg[chave] = $(id).checked; salvarCfg(); mostrarFila(); });
   }
   vigiarMoldura();
+  mostrarFila();
   $('arquivo').addEventListener('change', async (ev) => {
     const f = ev.target.files?.[0];
     ev.target.value = '';
