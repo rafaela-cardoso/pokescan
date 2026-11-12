@@ -7,6 +7,7 @@
 import { PADRAO, ESTADOS } from './config.js';
 import * as camera from './camera.js';
 import { lerCarta, lerIdioma, aquecer } from './ocr.js';
+import { lerComGemini } from './visao.js';
 import { descobrirIdiomas, filtrarPorIdiomaDaEdicao } from './edicoes.js';
 import { detectarExtra } from './extras.js';
 import {
@@ -96,6 +97,7 @@ function abrirAjustes() {
   $('nomeEmIngles').checked = cfg.nomeEmIngles;
   $('proxyImagens').value = cfg.proxyImagens || '';
   $('salvarDireto').checked = cfg.salvarDireto;
+  $('lerComGemini').checked = cfg.lerComGemini;
   $('salvarFoto').checked = cfg.salvarFoto;
   $('pastaDrive').value = cfg.pastaDrive || '';
   marcar($('chipsEstadoPadrao'), cfg.estado);
@@ -111,6 +113,7 @@ function fecharAjustes() {
   cfg.nomeEmIngles = $('nomeEmIngles').checked;
   cfg.proxyImagens = $('proxyImagens').value.trim();
   cfg.salvarDireto = $('salvarDireto').checked;
+  cfg.lerComGemini = $('lerComGemini').checked;
   cfg.salvarFoto = $('salvarFoto').checked;
   cfg.pastaDrive = $('pastaDrive').value.trim();
   if (cfg.salvarFoto && !idDaPasta(cfg.pastaDrive)) avisar('Para salvar as fotos, cole o link da pasta do Drive em Configurar.', 'erro');
@@ -203,6 +206,24 @@ function progresso(status, p) {
   $('barraProgresso').style.width = `${Math.round(p * 100)}%`;
 }
 
+// Leitura pelo Gemini (intermediário + login Google). Sem login, intermediário ou cota, devolve null e o OCR lê.
+// Não abre o login aqui: a leitura não vem de um toque em "Entrar", e o popup seria barrado.
+let avisoGemini = '';
+async function lerPrimeiroComGemini(canvas) {
+  avisoGemini = '';
+  if (!cfg.lerComGemini || !cfg.proxyImagens) return null;
+  if (!conta.conectado(cfg.clienteId)) { avisoGemini = 'Gemini: entre com Google em Configurar para usar'; return null; }
+  $('lendoMsg').textContent = 'Lendo a carta com o Gemini…';
+  $('barraProgresso').style.width = '50%';
+  try {
+    return await lerComGemini(canvas, { proxy: cfg.proxyImagens, token: await conta.obterToken(cfg.clienteId) });
+  } catch (e) {
+    if (e.login) conta.invalidar();
+    avisoGemini = `Gemini não leu (${e.message}); lido pelo OCR`;
+    return null;
+  }
+}
+
 async function processar(canvas) {
   if (ocupado) return;
   ocupado = true;
@@ -213,7 +234,7 @@ async function processar(canvas) {
     mini.width = 189; mini.height = 264;
     mini.getContext('2d').drawImage(canvas, 0, 0, mini.width, mini.height);
 
-    const lido = await lerCarta(canvas, { progresso });
+    const lido = await lerPrimeiroComGemini(canvas) || await lerCarta(canvas, { progresso });
     try { lido.extraDetectado = detectarExtra(canvas).extra; } catch { lido.extraDetectado = null; }
     // número acima do total (090/084: ilustração especial, secreta): a carta é holo inteira e não existe em Reverse
     const acimaDoTotal = (lido.numeros || []).some((n) => /^\d+$/.test(n.numero) && /^\d+$/.test(n.total) && Number(n.numero) > Number(n.total));
@@ -383,6 +404,8 @@ function mostrarResumo() {
   const nums = (lido.numeros || []).map((n) => [n.numero, n.total].filter(Boolean).join('/'));
   partes.push(nums.length ? `Número lido: ${nums.join(' ou ')}` : 'Número não lido');
   if (lido.siglas?.length) partes.push(`Coleção lida: ${lido.siglas.join(' ou ')}`);
+  partes.push(`Lido por: ${lido.lidoPor || 'OCR'}`);
+  if (avisoGemini) partes.push(avisoGemini);
   partes.push(`Idioma: ${NOMES_IDIOMA[lido.idioma] || 'não identificado'}`);
   if (lido.extraDetectado) partes.push(`Extra pela imagem: ${lido.extraDetectado} (confira)`);
   if (erro) partes.push(`Liga: ${erro}`);

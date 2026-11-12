@@ -80,6 +80,33 @@ contam como o mesmo idioma (o liga_price_sheets aceita os dois).
 **Pendentes:** sem internet ou com erro, a carta fica na lista **Gravadas** marcada como pendente. **Enviar pendentes**
 tenta de novo; **Descartar pendentes** apaga as que ainda não foram gravadas (as já gravadas não são afetadas).
 
+## Leitura pelo Gemini
+
+O OCR (tesseract.js) lê letra por letra e erra fácil com brilho, arte por trás do texto ou fotos grandes. Com a
+opção **Configurar → Ler a carta com o Gemini** (ligada por padrão), a foto recortada vai para o Gemini, que devolve
+nome, número, total, sigla da coleção e idioma. O resto (busca na Liga, filtros, link) é o mesmo. Sem login Google,
+sem intermediário, sem internet ou com a cota esgotada, o app volta sozinho para o OCR e diz isso no resumo.
+
+Usa a **cota gratuita da API do Gemini** (Google AI Studio), que é separada da assinatura do Gemini. A chave fica
+no seu intermediário Apps Script, nunca no site, e o script só atende quem entrou no pokescan com o login Google do
+app (o token é conferido no Google e precisa ser do Client ID do pokescan).
+
+Passo a passo (uma vez):
+
+1. Em [aistudio.google.com](https://aistudio.google.com), entre com sua conta Google → **Get API key** → **Create
+   API key**. Copie a chave. Na cota grátis, o Google pode usar o que é enviado para melhorar os produtos dele.
+2. Abra o seu projeto do intermediário em [script.google.com](https://script.google.com) e troque o código pelo de
+   `proxy/AppsScript_imagens.gs` (o mesmo arquivo de antes, agora com a leitura pelo Gemini). Salve.
+3. **Configurações do projeto** (engrenagem) → **Propriedades do script** → adicione:
+   - `GEMINI_API_KEY`: a chave do passo 1;
+   - `CLIENT_ID`: o Client ID do pokescan (`….apps.googleusercontent.com`);
+   - `MODELO_GEMINI` (opcional): outro modelo do Gemini. O padrão está no início do script.
+4. **Implantar → Gerenciar implantações → editar (lápis) → Versão: Nova versão → Implantar**. A URL continua a
+   mesma, e o app já usa.
+
+Os limites da cota grátis (pedidos por minuto e por dia) aparecem em
+[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
+
 ## Fotos no Drive
 
 Com **Configurar → Fotos no Drive** ligado, cada carta gravada também tem a foto (o recorte da carta) salva na pasta
