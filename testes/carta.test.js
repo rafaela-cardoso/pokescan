@@ -60,6 +60,14 @@ test('extrairNome junta a inicial separada e mantém "da" (Scarlet & Violet)', (
   assert.equal(qualidadeNome('Mewtwo VMAX'), 1);
 });
 
+test('extrairNome tira sobras depois do nome (leituras reais da Slowbro)', () => {
+  assert.equal(extrairNome('Slowbro ya'), 'Slowbro');
+  assert.equal(extrairNome('Sowbro BOS'), 'Sowbro');
+  assert.equal(extrairNome('ESTAGIO | Slowbro\nEvoluide Slowpoke comp'), 'Slowbro', '"Evolui de" lido sem espaço não é nome');
+  assert.equal(extrairNome('Pikachu VMAX'), 'Pikachu VMAX');
+  assert.equal(extrairNome('Charizard ex'), 'Charizard ex');
+});
+
 test('qualidadeNome', () => {
   assert.equal(qualidadeNome('Pikachu'), 1);
   assert.equal(qualidadeNome('Charizard ex'), 1);

@@ -56,7 +56,7 @@ export const numeroCatalogo = (numero) => String(numero ?? '').replace(/^0+(?=\d
 // Palavras da faixa de cima que não fazem parte do nome.
 const RUIDO = [
   /\b(HP|PV|PS|KP)\s*\d+\b/gi, /\b\d+\s*(HP|PV|PS|KP)\b/gi,
-  /\b(BASIC|BASICO|BÁSICO|BASIQUE|STAGE\s*[12]?|ESTAGIO\s*[12]?|ESTÁGIO\s*[12]?|EVOLVES\s+FROM.*|EVOLUI\s+DE.*|EVOLUCAO.*|EVOLUÇÃO.*)\b/gi,
+  /\b(BASIC|BASICO|BÁSICO|BASIQUE|STAGE\s*[12]?|ESTAGIO\s*[12]?|ESTÁGIO\s*[12]?|EVOLVES\s*FROM.*|EVOLUI\s*DE.*|EVOLUCAO.*|EVOLUÇÃO.*)\b/gi,
   /\b(TRAINER|TREINADOR|ITEM|SUPPORTER|APOIADOR|STADIUM|ESTADIO|ESTÁDIO|POKEMON\s+TOOL|FERRAMENTA\s+POKEMON|ENERGY|ENERGIA)\b/gi,
 ];
 // Ligações minúsculas que fazem parte do nome ("Gabite da Cíntia", "Team Rocket's", "Misty's").
@@ -90,6 +90,10 @@ export function extrairNome(texto) {
     // um sufixo sozinho ("V", "ex") não é nome; sobras minúsculas antes do nome ("pés Pikachu") também não
     while (melhor.length && SUFIXOS[melhor[0].toLowerCase()]) melhor.shift();
     while (melhor.length > 1 && /^\p{Ll}/u.test(melhor[0]) && melhor.slice(1).some((p) => /^\p{Lu}/u.test(p))) melhor.shift();
+    // sobras depois do nome: pedaço minúsculo curto ("Slowbro ya") ou sigla inventada em MAIÚSCULAS ("Sowbro BOS")
+    const sobra = (p) => !SUFIXOS[p.toLowerCase()] && !LIGACOES.has(p)
+      && ((p.length <= 2 && /^\p{Ll}+$/u.test(p)) || (p.length <= 4 && !/\p{Ll}/u.test(p)));
+    while (melhor.length > 1 && /^\p{Lu}\p{Ll}/u.test(melhor[0]) && sobra(melhor[melhor.length - 1])) melhor.pop();
     return melhor.join(' ');
   });
   const letras = (s) => (s.match(/\p{L}/gu) || []).length;

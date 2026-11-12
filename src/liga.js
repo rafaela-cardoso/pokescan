@@ -66,7 +66,7 @@ export function siglasNoTexto(texto, { daCaixa = false } = {}) {
     if (/^\d+$/.test(t)) continue;
     // a sigla pode vir grudada no idioma ("ASCPT"): tenta também sem o final de idioma
     const bases = [t, t.replace(/(PT|EN|JP|KR|KO)$/, '')];
-    if (daCaixa) for (let n = t.length - 1; n >= 3; n--) bases.push(t.slice(0, n));
+    if (daCaixa) for (const u of [t, t.slice(1)]) for (let n = u.length; n >= 3; n--) bases.push(u.slice(0, n));
     for (const b of bases.filter((x) => x.length >= 3)) {
       let variantes = [b];
       for (let i = 0; i < b.length; i++) {
@@ -161,9 +161,9 @@ export function semelhancaNumero(a, b) {
   const x = semZeros(a), y = semZeros(b);
   if (!x || !y) return 0;
   if (x === y) return 1;
-  // um dígito do começo perdido na leitura: "4" lido de "94"
-  if (y.length === x.length - 1 && /^\d+$/.test(y) && x.endsWith(y)) return 0.6;
-  if (x.length === y.length - 1 && /^\d+$/.test(x) && y.endsWith(x)) return 0.6;
+  // um dígito perdido no começo ("4" lido de "94") ou, em promo, um a mais no fim ("XY644" de "XY64": o símbolo virou dígito)
+  const [curto, longo] = x.length < y.length ? [x, y] : [y, x];
+  if (longo.length === curto.length + 1 && /\d$/.test(curto) && ((/^[A-Z]/.test(curto) && longo.startsWith(curto)) || (/^\d+$/.test(curto) && longo.endsWith(curto)))) return 0.6;
   if (x.length !== y.length) return 0;
   let nota = 0;
   for (let i = 0; i < x.length; i++) nota += x[i] === y[i] ? 1 : parecidos(x[i], y[i]) ? 0.6 : 0;
@@ -313,6 +313,12 @@ export function consultas({ nome, numero, total, qualidadeNome = 1, trechosNumer
   q.push(...nums);
   if (n && /^\d{2,}$/.test(t)) q.push(`${pad(n)}/${pad(t).slice(0, -1)}`);
   if (n) q.push(`${pad(n)}/`);
+  // promo sem total ("XY644"): o símbolo ao lado do número costuma virar um dígito a mais -> "(XY64/", "(XY44/"
+  const promo = !t && String(numero ?? '').toUpperCase().match(/^([A-Z]+)(\d{2,4})$/);
+  if (promo) {
+    const [, pre, dig] = promo;
+    for (const d of [dig.slice(0, -1), dig.slice(1)]) if (d.length >= 2) q.push(`(${pre}${d}/`);
+  }
   // sem nome legível (ex.: carta em japonês/chinês), o número é a única pista: tenta também as trocas de um dígito
   if (!nomeBom && /^\d{3}$/.test(pad(n)) && /^\d+$/.test(t)) {
     const base = pad(n);
@@ -370,9 +376,12 @@ export async function buscarCandidatos(lido) {
   const lista = consultas(lido);
   const vistos = new Map();
   let erro = null, algumaDeuCerto = false;
+  let nomeNaLiga = null; // a busca só pelo nome achou alguma carta? (false = nome mal lido, que a Liga não conhece)
   for (const consulta of lista) {
     try {
-      for (const item of await pedir(consulta)) {
+      const itens = await pedir(consulta);
+      if (!/[(\d/]/.test(consulta)) nomeNaLiga = itens.length > 0;
+      for (const item of itens) {
         const c = converter(item);
         if (!vistos.has(c.id)) vistos.set(c.id, { ...c, nota: pontuar(c, lido) });
       }
@@ -394,7 +403,8 @@ export async function buscarCandidatos(lido) {
   const nomeBom = lido.nome && (lido.qualidadeNome ?? 1) >= 0.5 && chave(lido.nome).length >= 3;
   const achou = () => [...vistos.values()].some((c) => nomeBate(c, lido.nome)
     && ((lido.total && semZeros(c.total) === semZeros(lido.total)) || (lido.numero && semelhancaNumero(c.numero, lido.numero) >= 0.9)));
-  if (nomeBom && !achou()) {
+  // se nem o nome sozinho existe na Liga, "Nome Prime" e "Nome (094" também não existem: não perde tempo
+  if (nomeBom && nomeNaLiga !== false && !achou()) {
     const nomeBusca = lido.nome.trim();
     const n = semZeros(lido.numero);
     const extras = [];
