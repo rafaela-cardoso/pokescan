@@ -9,8 +9,8 @@
 // - Só as colunas reconhecidas são preenchidas; as outras (preço, fórmulas, erros, observações) nunca são tocadas.
 // - A carta vai para a linha logo abaixo da última linha que tem dado nessas colunas: nada é sobrescrito
 //   e nenhuma linha é inserida (fórmulas e formatação abaixo continuam no lugar).
-// - Formato compatível com o bot-leilao (Carta, Estado, Idioma, Preço (liga)) e com o liga_price_sheets
-//   (Carta "Nome (nº/total)", Estado/Qualidade M/NM/SP/MP/HP/D, Extra, Idioma, Preço (Liga), Link Liga, Erros).
+// - Só preenche Quantidade, Carta, Estado, Extra, Idioma e Link liga (formato do liga_price_sheets e do bot-leilao).
+// - Se a mesma carta já está na aba, soma a quantidade na linha dela em vez de criar outra.
 import { semAcento } from './idioma.js';
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -18,17 +18,15 @@ const LINHAS_CABECALHO = 15;
 
 const norm = (s) => semAcento(String(s ?? '').replace(/[º°]/g, 'o')).replace(/\s+/g, ' ').trim();
 
-// Colunas que o app sabe preencher. "nomes" = títulos aceitos (sem acento, minúsculas).
+// As únicas colunas que o app preenche. "nomes" = títulos aceitos (sem acento, minúsculas).
+// "Nome" vale como "Carta" (o liga_price_sheets aceita os dois), mas "Carta" tem preferência se houver as duas.
 export const COLUNAS = [
-  { campo: 'carta', nomes: ['carta'] },
-  { campo: 'nome', nomes: ['nome', 'nome da carta', 'name', 'card'] },
-  { campo: 'numero', nomes: ['numero', 'n', 'no', 'n.', 'no.', 'number', 'codigo', 'numero da carta'] },
+  { campo: 'quantidade', nomes: ['quantidade', 'qtd', 'qtde', 'qtd.', 'quant.'] },
+  { campo: 'carta', nomes: ['carta', 'nome', 'nome da carta', 'card'] },
   { campo: 'estado', nomes: ['estado', 'condicao', 'qualidade', 'condition', 'cond', 'cond.'] },
   { campo: 'extra', nomes: ['extra', 'extras'] },
   { campo: 'idioma', nomes: ['idioma', 'lingua', 'language'] },
-  { campo: 'quantidade', nomes: ['quantidade', 'qtd', 'qtde', 'qtd.', 'quant.'] },
-  { campo: 'data', nomes: ['data', 'data da leitura', 'adicionada em'] },
-  { campo: 'liga', nomes: ['link liga', 'link liga pokemon', 'link ligapokemon', 'liga', 'link', 'link da liga', 'url'] },
+  { campo: 'liga', nomes: ['link liga', 'link liga pokemon', 'link ligapokemon', 'liga', 'link', 'link da liga'] },
 ];
 
 // Cabeçalho criado quando a aba está vazia: o da planilha de leilão (lido pelo liga_price_sheets e pelo bot-leilao).
@@ -59,19 +57,22 @@ export function letraColuna(i) {
 // Linha de títulos -> { campo: índice da coluna }
 export function mapearColunas(titulos) {
   const mapa = {};
-  titulos.forEach((t, i) => {
-    const col = COLUNAS.find((c) => c.nomes.includes(norm(t)));
-    if (col && !(col.campo in mapa)) mapa[col.campo] = i;
-  });
+  const t = titulos.map(norm);
+  for (const col of COLUNAS) {
+    for (const nome of col.nomes) { // na ordem de preferência ("carta" antes de "nome")
+      const i = t.indexOf(nome);
+      if (i >= 0) { mapa[col.campo] = i; break; }
+    }
+  }
   return mapa;
 }
 
-// Procura o cabeçalho nas primeiras linhas: a primeira com "Carta" ou "Nome" e pelo menos 2 colunas conhecidas.
+// Procura o cabeçalho nas primeiras linhas: a primeira com "Carta" (ou "Nome") e pelo menos mais uma coluna conhecida.
 // Devolve { indice, mapa } ou null.
 export function encontrarCabecalho(linhas) {
   for (let i = 0; i < Math.min(LINHAS_CABECALHO, linhas.length); i++) {
     const mapa = mapearColunas(linhas[i] || []);
-    if (('carta' in mapa || 'nome' in mapa) && Object.keys(mapa).length >= 2) return { indice: i, mapa };
+    if ('carta' in mapa && Object.keys(mapa).length >= 2) return { indice: i, mapa };
   }
   return null;
 }
@@ -86,21 +87,44 @@ export function proximaLinha(linhas, indiceCabecalho, mapa) {
   return ultima + 1;
 }
 
-// Valor de cada campo para a planilha.
-// "Carta" recebe "Nome (026/128)" (bot-leilao e liga_price_sheets). O liga_price_sheets aceita "Nome" no lugar de
-// "Carta" com o mesmo formato: sem coluna "Carta", é a coluna "Nome" que recebe "Nome (026/128)".
-export function valoresDoRegistro(mapa, registro) {
-  const v = { ...registro };
-  if (!('carta' in mapa)) v.nome = registro.carta;
-  return v;
+// Comparação de cada campo: maiúsculas, acentos e espaços não importam; extra vazio = "Normal";
+// coreano KR = KO (a Liga usa KO).
+const chaveCarta = (v) => norm(v).replace(/[^a-z0-9/()]/g, '');
+const extraNorm = (v) => { const e = norm(v); return e === 'normal' || e === 'sem extra' ? '' : e; };
+const idiomaNorm = (v) => { const i = norm(v); return i === 'ko' ? 'kr' : i; };
+
+// Linha (índice) onde a MESMA carta já está — mesma Carta, Estado, Extra e Idioma —, ou -1.
+// Só vale se a planilha tiver a coluna Quantidade (senão não há onde somar).
+export function linhaDaMesmaCarta(linhas, indiceCabecalho, mapa, registro) {
+  if (!('quantidade' in mapa)) return -1;
+  const cel = (l, campo) => (campo in mapa ? String(l?.[mapa[campo]] ?? '') : '');
+  for (let i = indiceCabecalho + 1; i < linhas.length; i++) {
+    const l = linhas[i];
+    if (chaveCarta(cel(l, 'carta')) !== chaveCarta(registro.carta)) continue;
+    if ('estado' in mapa && norm(cel(l, 'estado')) !== norm(registro.estado)) continue;
+    if ('extra' in mapa && extraNorm(cel(l, 'extra')) !== extraNorm(registro.extra)) continue;
+    if ('idioma' in mapa && idiomaNorm(cel(l, 'idioma')) !== idiomaNorm(registro.idioma)) continue;
+    return i;
+  }
+  return -1;
+}
+
+// Quantidade que já estava na linha. Vazia conta como 1 (a linha já representa uma carta); texto que não é número
+// devolve null (aí a carta vai para uma linha nova, para não estragar o que está lá).
+export function quantidadeExistente(valor) {
+  const t = String(valor ?? '').trim();
+  if (!t) return 1;
+  return /^\d+$/.test(t) ? Number(t) : null;
 }
 
 // Escritas (uma por célula) da linha `indice` (0 = linha 1). Só campos mapeados e com valor.
 export function montarEscritas(aba, indice, mapa, registro) {
-  const v = valoresDoRegistro(mapa, registro);
   return Object.entries(mapa)
-    .filter(([campo]) => v[campo] != null && String(v[campo]) !== '')
-    .map(([campo, col]) => ({ range: intervalo(aba, `${letraColuna(col)}${indice + 1}`), values: [[String(v[campo])]] }));
+    .filter(([campo]) => registro[campo] != null && String(registro[campo]) !== '')
+    .map(([campo, col]) => {
+      const v = registro[campo];
+      return { range: intervalo(aba, `${letraColuna(col)}${indice + 1}`), values: [[campo === 'quantidade' ? Number(v) : String(v)]] };
+    });
 }
 
 async function chamar(token, url, opcoes = {}) {
@@ -122,19 +146,30 @@ async function chamar(token, url, opcoes = {}) {
 
 // Título da planilha e nomes das abas.
 export async function lerPlanilha(token, id) {
-  const d = await chamar(token, `${API}/${id}?fields=properties.title,sheets.properties.title`);
-  return { titulo: d.properties.title, abas: d.sheets.map((s) => s.properties.title) };
+  const d = await chamar(token, `${API}/${id}?fields=properties.title,sheets.properties(title,sheetId)`);
+  return {
+    titulo: d.properties.title,
+    abas: d.sheets.map((s) => s.properties.title),
+    gids: Object.fromEntries(d.sheets.map((s) => [String(s.properties.sheetId), s.properties.title])),
+  };
 }
 
-// Grava uma carta na próxima linha livre da aba. Cria o cabeçalho se a aba estiver vazia.
-// Devolve o número da linha gravada (1 = primeira).
+// Aba indicada no link ("...#gid=552223964" ou "?gid=..."), ou '' se o link não tiver.
+export function gidDaPlanilha(url) {
+  const m = String(url ?? '').match(/[#?&]gid=(\d+)/);
+  return m ? m[1] : '';
+}
+
+// Grava uma carta. Se a mesma carta (Carta, Estado, Extra e Idioma) já está na aba, SOMA a quantidade na linha dela;
+// senão, grava na próxima linha livre. Cria o cabeçalho se a aba estiver vazia.
+// Devolve { linha (1 = primeira), somada, quantidade }.
 export async function adicionarCarta(token, id, aba, registro) {
   const url = `${API}/${id}/values/${encodeURIComponent(intervalo(aba))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`;
   let linhas = (await chamar(token, url)).values || [];
   let cab = encontrarCabecalho(linhas);
   if (!cab) {
     if (linhas.some((l) => l.some((c) => String(c).trim()))) {
-      throw new Error(`Não achei o cabeçalho na aba "${aba}": as ${LINHAS_CABECALHO} primeiras linhas precisam ter uma linha com a coluna "Carta" ou "Nome" (e mais uma, como "Estado" ou "Idioma").`);
+      throw new Error(`Não achei o cabeçalho na aba "${aba}": as ${LINHAS_CABECALHO} primeiras linhas precisam ter uma linha com a coluna "Carta" (e mais uma, como "Estado" ou "Idioma").`);
     }
     await chamar(token, `${API}/${id}/values/${encodeURIComponent(intervalo(aba, 'A1'))}?valueInputOption=RAW`, {
       method: 'PUT', body: JSON.stringify({ values: [CABECALHO_PADRAO] }),
@@ -142,12 +177,25 @@ export async function adicionarCarta(token, id, aba, registro) {
     linhas = [CABECALHO_PADRAO];
     cab = encontrarCabecalho(linhas);
   }
+  const lido = Math.max(1, Number(registro.quantidade) || 1);
+
+  const igual = linhaDaMesmaCarta(linhas, cab.indice, cab.mapa, registro);
+  const antes = igual >= 0 ? quantidadeExistente(linhas[igual]?.[cab.mapa.quantidade]) : null;
+  if (igual >= 0 && antes != null) {
+    const total = antes + lido;
+    await chamar(token, `${API}/${id}/values:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({ valueInputOption: 'RAW', data: [{ range: intervalo(aba, `${letraColuna(cab.mapa.quantidade)}${igual + 1}`), values: [[total]] }] }),
+    });
+    return { linha: igual + 1, somada: true, quantidade: total };
+  }
+
   const indice = proximaLinha(linhas, cab.indice, cab.mapa);
-  const data = montarEscritas(aba, indice, cab.mapa, registro);
+  const data = montarEscritas(aba, indice, cab.mapa, { ...registro, quantidade: lido });
   if (!data.length) throw new Error('Nenhuma coluna da planilha corresponde aos dados da carta.');
   // RAW: "026/128" não pode virar data nem fração
   await chamar(token, `${API}/${id}/values:batchUpdate`, {
     method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data }),
   });
-  return indice + 1;
+  return { linha: indice + 1, somada: false, quantidade: lido };
 }

@@ -51,6 +51,8 @@ jobs:
         env:
           POKESCAN_CLIENT_ID: ${{ vars.POKESCAN_CLIENT_ID }}
           POKESCAN_PROXY_IMAGENS: ${{ vars.POKESCAN_PROXY_IMAGENS }}
+          POKESCAN_PLANILHA: ${{ vars.POKESCAN_PLANILHA }}
+          POKESCAN_ABA: ${{ vars.POKESCAN_ABA }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

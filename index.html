@@ -8,8 +8,8 @@
   <meta name="description" content="Leia cartas com a câmera do celular e grave na sua planilha do Google Sheets.">
   <title>pokescan</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icone.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icone.svg">
+  <link rel="icon" href="icones/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icones/apple-touch-icon.png" sizes="180x180">
   <link rel="stylesheet" href="estilo.css">
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js" defer></script>
   <script type="module" src="src/app.js"></script>
@@ -102,7 +102,10 @@
     <section class="historico">
       <div class="historico-topo">
         <h2>Gravadas</h2>
-        <button id="reenviar" class="btn pequeno" type="button" hidden>Enviar pendentes</button>
+        <div class="historico-acoes">
+          <button id="descartarPendentes" class="btn pequeno secundario" type="button" hidden>Descartar pendentes</button>
+          <button id="reenviar" class="btn pequeno" type="button" hidden>Enviar pendentes</button>
+        </div>
       </div>
       <ol id="listaHistorico"></ol>
       <p id="historicoVazio" class="vazio">As cartas gravadas aparecem aqui.</p>
@@ -153,8 +156,6 @@
         <div class="chips" id="chipsIdiomaPadrao" role="radiogroup" aria-label="Idioma padrão"></div>
       </div>
       <label class="campo"><span>Extra padrão</span><select id="extraPadrao"></select></label>
-      <label class="campo"><span>Carta coreana detectada como</span>
-        <select id="coreano"><option value="KO">KO (código da Liga Pokémon)</option><option value="KR">KR</option></select></label>
       <label class="campo">
         <span>Intermediário de imagens (opcional)</span>
         <input id="proxyImagens" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">

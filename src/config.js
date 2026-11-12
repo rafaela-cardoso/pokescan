@@ -8,12 +8,13 @@ export const PADRAO = {
   // Client ID OAuth do Google (tipo "Aplicativo da Web"). Veja o README, seção "Google".
   // Preencher aqui evita digitar no celular; não é segredo (fica visível no navegador de qualquer forma).
   clienteId: '',
-  planilha: '', // link da planilha
+  // link da planilha. Na publicação vem da variável POKESCAN_PLANILHA do repositório (não fica no código);
+  // se o link tiver "gid=", a aba é escolhida sozinha depois do login (ou use POKESCAN_ABA)
+  planilha: '',
   aba: '',
   estado: 'NM',
   idioma: '', // vazio = detectar pela foto
   extra: 'Normal', // coluna Extra (Foil, Reverse Foil...)
-  coreano: 'KO', // código gravado quando a carta é detectada como coreana: KO (Liga) ou KR (bot-leilao)
   // URL do intermediário de imagens (proxy/AppsScript_imagens.gs): permite ler o idioma das edições sugeridas
   // (não é segredo: só repassa imagens do servidor da Liga)
   proxyImagens: 'https://script.google.com/macros/s/AKfycbwjPirts9jQFRIsy3oit_d6n82RfTTh-7FJclycDKRH73ycMh5oCU4x-p69AkUM7fAF/exec',

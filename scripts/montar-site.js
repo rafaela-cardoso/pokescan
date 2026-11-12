@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SAIDA = path.join(RAIZ, '_site');
-const ITENS = ['index.html', 'estilo.css', 'manifest.webmanifest', 'icone.svg', 'sw.js', 'LICENSE.md', 'src'];
+const ITENS = ['index.html', 'estilo.css', 'manifest.webmanifest', 'icones', 'sw.js', 'LICENSE.md', 'src'];
 
 fs.rmSync(SAIDA, { recursive: true, force: true });
 fs.mkdirSync(SAIDA);
@@ -16,9 +16,14 @@ for (const item of ITENS) fs.cpSync(path.join(RAIZ, item), path.join(SAIDA, item
 // Idem para o intermediário de imagens (variável POKESCAN_PROXY_IMAGENS).
 const id = process.env.POKESCAN_CLIENT_ID?.trim();
 const proxy = process.env.POKESCAN_PROXY_IMAGENS?.trim();
+const planilha = process.env.POKESCAN_PLANILHA?.trim();
+const aba = process.env.POKESCAN_ABA?.trim();
 const cfg = path.join(SAIDA, 'src', 'config.js');
 let texto = fs.readFileSync(cfg, 'utf8');
 if (id) texto = texto.replace("clienteId: ''", `clienteId: ${JSON.stringify(id)}`);
 if (proxy) texto = texto.replace(/proxyImagens: '[^']*'/, `proxyImagens: ${JSON.stringify(proxy)}`);
+if (planilha) texto = texto.replace("planilha: ''", `planilha: ${JSON.stringify(planilha)}`);
+if (aba) texto = texto.replace("aba: ''", `aba: ${JSON.stringify(aba)}`);
 fs.writeFileSync(cfg, texto);
-console.log(`Site montado em ${SAIDA}${id ? ' (com Client ID)' : ''}${proxy ? ' (com intermediário de imagens)' : ''}`);
+const extras = [id && 'Client ID', proxy && 'intermediário de imagens', planilha && 'planilha', aba && 'aba'].filter(Boolean);
+console.log(`Site montado em ${SAIDA}${extras.length ? ` (com ${extras.join(', ')})` : ''}`);

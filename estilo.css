@@ -172,6 +172,8 @@ input:focus, select:focus { outline: 2px solid var(--destaque); outline-offset: 
 
 /* ---------- histórico ---------- */
 .historico-topo { display: flex; align-items: center; justify-content: space-between; }
+.historico-acoes { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.btn.pequeno.secundario { background: var(--superficie); color: var(--texto); border: 1px solid var(--borda); }
 .historico ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .historico li {
   display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px;

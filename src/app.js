@@ -12,20 +12,22 @@ import { detectarExtra } from './extras.js';
 import { buscarCandidatos, linkLiga, EXTRAS, filtrarPorNome, filtrarPorIdioma, filtrarPorTotal } from './liga.js';
 import { formatarCarta } from './carta.js';
 import { NOMES_IDIOMA } from './idioma.js';
-import { idDaPlanilha, lerPlanilha, adicionarCarta } from './planilha.js';
+import { idDaPlanilha, gidDaPlanilha, lerPlanilha, adicionarCarta } from './planilha.js';
 import * as conta from './google.js';
 import { ler, gravar } from './armazenamento.js';
 
 const $ = (id) => document.getElementById(id);
-// KO = coreano na Liga/liga_price_sheets; KR = coreano no bot-leilao (que também aceita KO). Os dois funcionam.
-const IDIOMAS = ['EN', 'PT', 'JP', 'KO', 'KR', 'CH', 'CHS'];
+// Coreano é sempre KR (o OCR e a Liga dizem KO; o app grava KR).
+const IDIOMAS = ['EN', 'PT', 'JP', 'KR', 'CH', 'CHS'];
 // "ZH" = chinês sem dar para saber se é tradicional ou simplificado: marca CH (tradicional) para conferir
-const idiomaDetectado = (i) => (i === 'KO' ? cfg.coreano || 'KO' : i === 'ZH' ? 'CH' : i);
+const idiomaDetectado = (i) => (i === 'KO' ? 'KR' : i === 'ZH' ? 'CH' : i);
 const CONFIANCA_ALTA = 0.85;
 
 const cfg = { ...PADRAO, ...ler('config', {}) };
 if (!cfg.clienteId) cfg.clienteId = PADRAO.clienteId;
 if (!cfg.proxyImagens) cfg.proxyImagens = PADRAO.proxyImagens;
+// planilha e aba padrão da publicação, enquanto você não escolher outra em Configurar
+if (!cfg.planilha && PADRAO.planilha) { cfg.planilha = PADRAO.planilha; cfg.aba = PADRAO.aba || ''; }
 const salvarCfg = () => gravar('config', cfg);
 
 let historico = ler('historico', []); // [{ registro, situacao: 'ok'|'pendente', erro? }]
@@ -72,6 +74,9 @@ function mostrarDestino() {
   if (cfg.planilha && cfg.aba) {
     d.textContent = `${cfg.tituloPlanilha || 'Planilha'} › ${cfg.aba}`;
     d.classList.remove('alerta');
+  } else if (idDaPlanilha(cfg.planilha) && gidDaPlanilha(cfg.planilha)) {
+    d.textContent = 'Planilha do link (aba definida ao gravar)';
+    d.classList.remove('alerta');
   } else {
     d.textContent = 'Escolher planilha';
     d.classList.add('alerta');
@@ -90,7 +95,6 @@ function abrirAjustes() {
   $('salvarDireto').checked = cfg.salvarDireto;
   marcar($('chipsEstadoPadrao'), cfg.estado);
   marcar($('chipsIdiomaPadrao'), cfg.idioma);
-  $('coreano').value = cfg.coreano || 'KO';
   $('extraPadrao').value = cfg.extra;
   if (cfg.aba) preencherAbas(cfg.abas || [cfg.aba], cfg.aba);
   mostrarConta();
@@ -104,7 +108,6 @@ function fecharAjustes() {
   cfg.salvarDireto = $('salvarDireto').checked;
   cfg.estado = marcado($('chipsEstadoPadrao')) || 'NM';
   cfg.idioma = marcado($('chipsIdiomaPadrao'));
-  cfg.coreano = $('coreano').value;
   cfg.extra = $('extraPadrao').value || 'Normal';
   const novaPlanilha = $('planilha').value.trim();
   if (novaPlanilha !== cfg.planilha) { cfg.planilha = novaPlanilha; cfg.aba = ''; cfg.abas = []; cfg.tituloPlanilha = ''; }
@@ -145,7 +148,7 @@ async function carregarAbas() {
     cfg.planilha = $('planilha').value.trim();
     cfg.tituloPlanilha = p.titulo;
     cfg.abas = p.abas;
-    preencherAbas(p.abas, cfg.aba);
+    preencherAbas(p.abas, cfg.aba || p.gids[gidDaPlanilha(cfg.planilha)]);
     cfg.aba = $('aba').value;
     salvarCfg();
     $('statusPlanilha').textContent = `“${p.titulo}”: ${p.abas.length} aba(s). Escolha onde as cartas serão gravadas.`;
@@ -403,21 +406,33 @@ function montarRegistro() {
   const numero = $('numero').value.trim();
   const total = $('total').value.trim();
   if (!nome && !numero) throw new Error('Preencha ao menos o nome ou o número da carta.');
+  // só o que vai para a planilha (Quantidade, Carta, Estado, Extra, Idioma, Link liga) + a hora, para o histórico
   return {
+    quantidade: Math.max(1, Number($('quantidade').value) || 1),
     carta: formatarCarta({ nome, numero, total }),
-    nome,
-    numero: [numero, total].filter(Boolean).join('/'),
     estado: marcado($('chipsEstado')),
     extra: $('extra').value === 'Normal' ? '' : $('extra').value, // vazio = sem extra (liga_price_sheets)
     idioma: marcado($('chipsIdioma')),
-    quantidade: $('quantidade').value || '1',
-    data: agora(),
     liga: c ? linkLiga(c.nomeLiga) : '',
+    quando: agora(),
   };
+}
+
+// Link com "gid=" e aba ainda não escolhida: descobre o nome da aba pelo gid (precisa do login).
+async function resolverAba(token, id) {
+  if (cfg.aba) return;
+  const gid = gidDaPlanilha(cfg.planilha);
+  if (!gid) return;
+  const p = await lerPlanilha(token, id);
+  if (!p.gids[gid]) return;
+  Object.assign(cfg, { aba: p.gids[gid], abas: p.abas, tituloPlanilha: p.titulo });
+  salvarCfg();
+  mostrarDestino();
 }
 
 async function enviar(registro) {
   const id = idDaPlanilha(cfg.planilha);
+  if (id && !cfg.aba && gidDaPlanilha(cfg.planilha)) await resolverAba(await conta.obterToken(cfg.clienteId), id);
   if (!id || !cfg.aba) throw new Error('Escolha a planilha e a aba em Configurar.');
   try {
     const token = await conta.obterToken(cfg.clienteId);
@@ -437,9 +452,11 @@ async function salvar() {
   try { registro = montarRegistro(); } catch (e) { return avisar(e.message, 'erro'); }
   $('salvar').disabled = true;
   try {
-    const linha = await enviar(registro);
-    historico.unshift({ registro, situacao: 'ok', linha });
-    avisar(`✓ ${registro.carta} gravada na linha ${linha}`, 'ok');
+    const r = await enviar(registro);
+    historico.unshift({ registro, situacao: 'ok', linha: r.linha, somada: r.somada, total: r.quantidade });
+    avisar(r.somada
+      ? `✓ ${registro.carta}: já estava na linha ${r.linha}, quantidade agora ${r.quantidade}`
+      : `✓ ${registro.carta} gravada na linha ${r.linha}`, 'ok');
     descartar();
   } catch (e) {
     historico.unshift({ registro, situacao: 'pendente', erro: e.message });
@@ -458,8 +475,9 @@ async function reenviar() {
   let ok = 0;
   for (const h of pendentes) {
     try {
-      await enviar(h.registro);
-      h.situacao = 'ok'; delete h.erro; ok++;
+      const r = await enviar(h.registro);
+      Object.assign(h, { situacao: 'ok', linha: r.linha, somada: r.somada, total: r.quantidade });
+      delete h.erro; ok++;
     } catch (e) {
       h.erro = e.message;
       avisar(`Parei no envio: ${e.message}`, 'erro');
@@ -469,6 +487,17 @@ async function reenviar() {
   gravar('historico', historico);
   mostrarHistorico();
   if (ok) avisar(`✓ ${ok} pendente(s) enviada(s)`, 'ok');
+}
+
+// Descarta as cartas que estão esperando para ser gravadas (não mexe nas já gravadas).
+function descartarPendentes() {
+  const n = historico.filter((h) => h.situacao === 'pendente').length;
+  if (!n) return;
+  if (!confirm(`Descartar ${n} carta(s) pendente(s)? Elas não serão gravadas na planilha.`)) return;
+  historico = historico.filter((h) => h.situacao !== 'pendente');
+  gravar('historico', historico);
+  mostrarHistorico();
+  avisar(`${n} pendente(s) descartada(s)`);
 }
 
 function mostrarHistorico() {
@@ -482,13 +511,17 @@ function mostrarHistorico() {
     t.textContent = h.registro.carta;
     const d = document.createElement('span');
     d.className = 'detalhe';
-    d.textContent = [h.registro.estado, h.registro.extra, h.registro.idioma, h.situacao === 'pendente' ? `pendente: ${h.erro || ''}` : `${h.linha ? `linha ${h.linha} · ` : ''}${h.registro.data}`]
+    const onde = h.somada ? `somada na linha ${h.linha} (agora ${h.total})` : h.linha ? `linha ${h.linha}` : '';
+    d.textContent = [`${h.registro.quantidade || 1}x`, h.registro.estado, h.registro.extra, h.registro.idioma,
+      h.situacao === 'pendente' ? `pendente: ${h.erro || ''}` : onde, h.registro.quando || h.registro.data]
       .filter(Boolean).join(' · ');
     li.append(t, d);
     ol.appendChild(li);
   }
   $('historicoVazio').hidden = historico.length > 0;
-  $('reenviar').hidden = !historico.some((h) => h.situacao === 'pendente');
+  const temPendente = historico.some((h) => h.situacao === 'pendente');
+  $('reenviar').hidden = !temPendente;
+  $('descartarPendentes').hidden = !temPendente;
 }
 
 // ---------- início ----------
@@ -501,7 +534,7 @@ function iniciar() {
     for (const e of EXTRAS) sel.add(new Option(e, e));
   }
 
-  $('abrirAjustes').addEventListener('click', abrirAjustes);
+  $('abrirAjustes').addEventListener('click', () => ($('telaAjustes').hidden ? abrirAjustes() : fecharAjustes()));
   $('destino').addEventListener('click', abrirAjustes);
   $('fecharAjustes').addEventListener('click', fecharAjustes);
   $('entrar').addEventListener('click', async () => {
@@ -528,6 +561,7 @@ function iniciar() {
   $('buscarDeNovo').addEventListener('click', buscarDeNovo);
   $('salvar').addEventListener('click', salvar);
   $('reenviar').addEventListener('click', reenviar);
+  $('descartarPendentes').addEventListener('click', descartarPendentes);
 
   const reposicionar = () => camera.posicionarMoldura($('video'), $('moldura'));
   window.addEventListener('resize', reposicionar);

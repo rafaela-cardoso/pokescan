@@ -9,7 +9,7 @@ tesseract.js e a mesma classificação de idioma, em `src/idioma.js`) e da busca
 - Aponte a câmera para a carta, encaixe na moldura e toque no botão vermelho. No Android, o app tira uma foto na
   resolução máxima do sensor (bem mais nítida que o vídeo).
 - O app lê o **nome** (topo), o **número de coleção** (rodapé: canto esquerdo, canto direito e faixa inteira) e o
-  **idioma** (EN, PT, JP, KO ou KR, CH, CHS). Entre inglês e português ele aceita palavras com letras lidas errado
+  **idioma** (EN, PT, JP, KR, CH, CHS). Entre inglês e português ele aceita palavras com letras lidas errado
   ("Fraquesa") e usa também o rodapé da caixa de texto. Cada faixa é ampliada e binarizada antes do OCR (a caixa de texto com
   limiar adaptativo, que aguenta o fundo irregular do foil e reflexos).
 - Com isso, busca a carta na **Liga Pokémon**, do mesmo jeito que o liga_price_sheets: `Nome (nº/total)`, o número com
@@ -26,7 +26,7 @@ tesseract.js e a mesma classificação de idioma, em `src/idioma.js`) e da busca
 - Cartas sem nome legível (japonês, chinês, coreano): a escolha depende só do número, então o app busca também
   números com um dígito trocado (`032` ↔ `092`) e sempre pede para você conferir a carta na grade.
 - **Ver preços desta carta na Liga Pokémon** abre a página da carta na Liga.
-- Sem internet ou com erro, a carta fica numa fila de **pendentes** e pode ser reenviada depois.
+- Sem internet ou com erro, a carta fica numa fila de **pendentes**, que pode ser reenviada ou descartada.
 
 As chamadas à busca da Liga seguem as regras do liga_price_sheets: no mínimo 400 ms entre uma e outra e, se a Liga
 pedir calma (erro 429), novas tentativas depois de 2, 4 e 8 segundos.
@@ -44,36 +44,40 @@ depois, no computador.
 
 ## Planilha
 
-O app nunca sobrescreve nada:
-
-- procura o cabeçalho nas **15 primeiras linhas** (pode haver título ou totais acima dele);
-- grava na linha **logo abaixo da última preenchida**, sem inserir linhas e sem usar buracos no meio da lista;
-- preenche **só as colunas que reconhece** (acentos e maiúsculas não importam); preço, fórmulas, erros, observações e
-  qualquer outra coluna ficam como estão.
+O app preenche **só seis colunas**: Quantidade, Carta, Estado, Extra, Idioma e Link liga. Todas as outras
+(Preço (Liga), Erros, Preço (compra), 10% off, opções, lance inicial, fechamento, pagamento, fórmulas, observações)
+ficam como estão: Preço (Liga) e Erros são do liga_price_sheets, e as demais do leilão.
 
 | Título da coluna (qualquer um destes) | O que o app grava |
 |---|---|
+| Quantidade, Qtd | quantas cartas iguais você leu (padrão `1`); se a carta já está na planilha, **soma** (veja abaixo) |
 | Carta (ou Nome, se não houver Carta) | `Pikachu (026/128)` — formato do liga_price_sheets e do bot de leilão |
 | Estado, Qualidade, Condição | `M`, `NM`, `SP`, `MP`, `HP` ou `D` |
 | Extra | vazio (Normal), `Foil`, `Reverse Foil`, `Promo`... (os nomes aceitos pelo liga_price_sheets) |
-| Idioma, Língua | `EN`, `PT`, `JP`, `KO` ou `KR`, `CH` ou `CHS` |
-| Link Liga, Liga, Link | link da carta na Liga Pokémon |
-| Número, Nº | `026/128` |
-| Quantidade, Qtd | `1` |
-| Data | data e hora da leitura |
+| Idioma, Língua | `EN`, `PT`, `JP`, `KR`, `CH` ou `CHS` |
+| Link liga, Liga, Link | link da carta na Liga Pokémon |
 
-Com as duas colunas, **Carta** recebe `Pikachu (026/128)` e **Nome** recebe só `Pikachu` (em português quando a Liga
-tem, ou em inglês, nas configurações).
+Acentos e maiúsculas nos títulos não importam. O cabeçalho é procurado nas **15 primeiras linhas** (pode haver título
+ou totais acima dele).
+
+**Onde a carta é gravada:**
+
+- **A carta já está na planilha** (mesma Carta, Estado, Extra e Idioma): o app **soma** a quantidade lida à que já
+  estava naquela linha, sem criar outra. Quantidade vazia conta como 1 (a linha já representa uma carta); se a célula
+  tiver texto em vez de número, ela não é tocada e a carta vai para uma linha nova.
+- **Carta nova:** vai para a linha **logo abaixo da última preenchida**, sem inserir linhas e sem usar buracos no meio
+  da lista. Nada é sobrescrito.
 
 Se a aba estiver vazia, o app cria o cabeçalho da planilha de leilão:
 
 `Quantidade | Carta | Estado | Preço (Liga) | Extra | Idioma | Erros | Preço (compra) | Link liga | 10% off | opçoes | lance inicial | fechamento | pagamento`
 
-O app preenche Quantidade, Carta, Estado, Extra, Idioma e Link liga; Preço (Liga) e Erros ficam para o
-liga_price_sheets, e as demais colunas para o leilão.
+**Coreano:** o app grava sempre `KR` (o bot de leilão lê `KR`). Na comparação com cartas já gravadas, `KR` e `KO`
+contam como o mesmo idioma. Atenção: o liga_price_sheets só reconhece `KO`; para ele preencher o preço de uma carta
+coreana, a extensão precisa aceitar `KR` também.
 
-**Coreano:** a Liga (e o liga_price_sheets) usa `KO`; o bot de leilão aceita `KO` e `KR`. Os dois botões existem no
-app, e em **Configurar** você escolhe qual código usar quando a carta é detectada como coreana.
+**Pendentes:** sem internet ou com erro, a carta fica na lista **Gravadas** marcada como pendente. **Enviar pendentes**
+tenta de novo; **Descartar pendentes** apaga as que ainda não foram gravadas (as já gravadas não são afetadas).
 
 ## Idioma das edições sugeridas
 
@@ -170,6 +174,16 @@ com o Google e com a busca da Liga.
 → **Pronto**. Ali também ficam o estado e o idioma padrão, a opção de gravar o nome em inglês e a opção de gravar
 direto quando a leitura for confiável.
 
+**Planilha padrão:** cadastre o link em **Settings → Secrets and variables → Actions → Variables** como
+`POKESCAN_PLANILHA` e o app publicado já abre com ela; não é preciso colar nada no celular. Se o link tiver `gid=`
+(o link copiado com uma aba aberta tem), essa aba é escolhida sozinha na primeira gravação, depois do login. Para
+fixar outra aba pelo nome, use também `POKESCAN_ABA`. Dá para trocar a qualquer momento em **Configurar**.
+
+O link fica fora do código do repositório, mas **vai dentro do site publicado** (qualquer pessoa que abra o app pode
+vê-lo). Isso não dá acesso à planilha: o app grava com a conta Google de quem fez login, então só quem tem permissão
+de edição na planilha consegue gravar, e com o app em modo de teste só os usuários de teste conseguem entrar. Mantenha
+o compartilhamento da planilha e das pastas acima dela como **Restrito** (sem "qualquer pessoa com o link").
+
 ## Dicas de leitura
 
 - Boa luz e a carta inteira dentro da moldura, reta, com o nome no topo. Use **Luz** (lanterna) se o aparelho tiver.
@@ -202,7 +216,7 @@ npm run site     # monta _site/ (o que vai para o GitHub Pages)
 | `src/extras.js` | sugestão de extra pela imagem (Poké Ball, Master Ball, Reverse Foil) |
 | `src/edicoes.js` | idioma das edições sugeridas: OCR nas imagens da Liga (via intermediário) e cache por edição |
 | `src/liga.js` | busca na Liga Pokémon (como o liga_price_sheets) e nota de cada candidato |
-| `src/planilha.js` | Google Sheets: cabeçalho, próxima linha livre e gravação só nas colunas reconhecidas |
+| `src/planilha.js` | Google Sheets: cabeçalho, soma da quantidade, próxima linha livre e gravação nas 6 colunas |
 | `src/google.js` | login com a conta Google |
 | `src/app.js` | interface |
 
