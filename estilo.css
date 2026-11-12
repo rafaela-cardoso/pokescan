@@ -148,7 +148,13 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .estado-item.bom { background: color-mix(in srgb, var(--bom) 18%, transparent); color: var(--bom); }
 .estado-item.medio { background: color-mix(in srgb, var(--medio) 18%, transparent); color: var(--medio); }
 .estado-item.ruim { background: color-mix(in srgb, var(--ruim) 18%, transparent); color: var(--ruim); }
-.estado-item.lendo { background: var(--suave-destaque); color: var(--texto); }
+/* carregando: as cartas ainda em leitura não entram na lista, só o contador com o ícone girando */
+.carregando-fila { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 14px; color: var(--suave); }
+.girando {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  border: 3px solid var(--suave-destaque); border-top-color: var(--destaque); animation: girar .8s linear infinite;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
 .fila-acoes { margin-top: 12px; }
 #abrirFila { margin-left: auto; }
 /* foto automática: a moldura fica verde enquanto a carta está parada, e pisca ao tirar a foto */
