@@ -215,6 +215,9 @@ async function processar(canvas) {
 
     const lido = await lerCarta(canvas, { progresso });
     try { lido.extraDetectado = detectarExtra(canvas).extra; } catch { lido.extraDetectado = null; }
+    // número acima do total (090/084: ilustração especial, secreta): a carta é holo inteira e não existe em Reverse
+    const acimaDoTotal = (lido.numeros || []).some((n) => /^\d+$/.test(n.numero) && /^\d+$/.test(n.total) && Number(n.numero) > Number(n.total));
+    if (acimaDoTotal && lido.extraDetectado === 'Reverse Foil') lido.extraDetectado = null;
     $('lendoMsg').textContent = 'Procurando na Liga Pokémon…';
     leitura = { lido, candidatos: [], escolha: null, erro: '', canvas };
     await consultarLiga(lido);

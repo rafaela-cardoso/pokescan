@@ -214,6 +214,7 @@ test('número com o primeiro dígito perdido conta como parecido ("4" de "94")',
   assert.equal(semelhancaNumero('94', '4'), 0.6);
   assert.equal(semelhancaNumero('4', '94'), 0.6);
   assert.equal(semelhancaNumero('94', '5'), 0);
+  assert.equal(semelhancaNumero('XY64', 'XY644'), 0.6, 'promo: símbolo lido como dígito a mais');
 });
 
 test('idioma pela tabela de edições: coleções japonesas sem sufixo no número', () => {
@@ -224,4 +225,9 @@ test('idioma pela tabela de edições: coleções japonesas sem sufixo no númer
   assert.equal(idiomaPelaEdicao('792'), null); // PBL
   const lista = [{ numero: '004', edicao: '319' }, { numero: '094', edicao: '754' }];
   assert.deepEqual(filtrarPorIdioma(lista, 'PT').map((c) => c.edicao), ['754']);
+});
+
+test('promo sem total: busca também sem o dígito a mais ("XY644" -> "(XY64/")', () => {
+  const q = consultas({ nome: 'Úds', numero: 'XY644', total: '', qualidadeNome: 1 });
+  assert.ok(q.includes('(XY64/'));
 });

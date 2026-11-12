@@ -184,18 +184,31 @@ export function imagemDaSigla(carta) {
   if (!caixa) return null;
   const k = sw / w;
   const r = [(sx + caixa.x * k) / carta.width, (sy + caixa.y * k) / carta.height, (caixa.w * k) / carta.width, (caixa.h * k) / carta.height];
-  const img = recortar(carta, r, 500, false);
-  const x = img.getContext('2d', { willReadFrequently: true });
-  const dados = x.getImageData(0, 0, img.width, img.height);
-  for (let i = 0; i < dados.data.length; i += 4) dados.data[i] = dados.data[i + 1] = dados.data[i + 2] = 255 - dados.data[i];
-  x.putImageData(dados, 0, 0);
-  return img;
+  return negativo(recortar(carta, r, 500, false));
 }
 
 async function reconhecer(w, imagem, parametros) {
   await w.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3', ...parametros });
   const { data } = await w.recognize(imagem);
   return data.text || '';
+}
+
+// Igual, mas devolve também as palavras com a caixa de cada uma (em pixels da imagem).
+async function reconhecerComPalavras(w, imagem, parametros) {
+  await w.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3', ...parametros });
+  const { data } = await w.recognize(imagem, {}, { text: true, blocks: true });
+  const palavras = [];
+  for (const b of data.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) for (const x of l.words || []) palavras.push(x);
+  return { texto: data.text || '', palavras };
+}
+
+// Negativo de uma imagem em cinza (letras brancas sobre fundo escuro viram escuras sobre claro).
+function negativo(c) {
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  for (let i = 0; i < d.data.length; i += 4) d.data[i] = d.data[i + 1] = d.data[i + 2] = 255 - d.data[i];
+  ctx.putImageData(d, 0, 0);
+  return c;
 }
 
 const SO_NUMERO = { tessedit_char_whitelist: '0123456789/ABCDEFGHIJKLMNOPQRSTUVWXYZ', tessedit_pageseg_mode: '11' };
@@ -209,12 +222,19 @@ const SO_DIGITOS = { tessedit_char_whitelist: '0123456789/', tessedit_pageseg_mo
 async function lerNumero(w, carta, textos) {
   const achados = [];
   const trechos = new Set();
+  let posicao = null; // onde o número foi lido, em frações da carta: { x0, y0, x1, y1 }
   const tentar = async (rotulo, regiao, larg, params, binarizar = true) => {
-    const t = await reconhecer(w, recortar(carta, regiao, larg, binarizar), params);
+    const img = recortar(carta, regiao, larg, binarizar);
+    const { texto: t, palavras } = await reconhecerComPalavras(w, img, params);
     textos[rotulo] = t;
     for (const d of t.match(/\d{2,}/g) || []) trechos.add(d);
     const n = extrairNumero(t);
     if (n && !achados.some((a) => a.numero === n.numero && a.total === n.total)) achados.push(n);
+    const p = !posicao && n && palavras.find((x) => /\d\s*\/\s*\d/.test(x.text));
+    if (p) {
+      const kx = regiao[2] / img.width, ky = regiao[3] / img.height;
+      posicao = { x0: regiao[0] + p.bbox.x0 * kx, y0: regiao[1] + p.bbox.y0 * ky, x1: regiao[0] + p.bbox.x1 * kx, y1: regiao[1] + p.bbox.y1 * ky };
+    }
   };
   await tentar('numeroEsq', REGIOES.numeroEsq, 1400, SO_NUMERO);
   await tentar('numeroDir', REGIOES.numeroDir, 1400, SO_NUMERO);
@@ -225,7 +245,7 @@ async function lerNumero(w, carta, textos) {
     await tentar('numero', REGIOES.numero, 2000, SO_NUMERO);
     await tentar('numeroAdapt', REGIOES.numero, 2000, SO_DIGITOS, 'adaptativo');
   }
-  return { achados, trechos: [...trechos] };
+  return { achados, trechos: [...trechos], posicao };
 }
 
 // Lê o nome em três versões de faixa e fica com a mais "legível" (empate: a mais longa, que perdeu menos letras).
@@ -238,9 +258,13 @@ async function lerNome(w, carta, textos) {
     opcoes.push({ nome, q: qualidadeNome(nome) });
     if (opcoes.length >= 2 && Math.max(...opcoes.map((o) => o.q)) >= 1) break; // já há um nome limpo
   }
-  opcoes.sort((a, b) => b.q - a.q || b.nome.length - a.nome.length);
-  return opcoes[0];
+  // empate: o nome que contém o outro ("Gabite da Cíntia" > "Cíntia"); senão, a faixa mais justa (a ordem acima)
+  const contem = (a, b) => a.nome.length > b.nome.length && a.nome.includes(b.nome);
+  return opcoes.reduce((m, o) => (o.q > m.q || (o.q === m.q && contem(o, m)) ? o : m));
 }
+
+// Palavras com cara de texto latino de verdade: 4+ letras em minúsculas, ou só a inicial maiúscula ("Fraqueza").
+const contarPalavrasLatinas = (t) => (String(t ?? '').match(/(?<![A-Za-zÀ-ÿ])(?:[A-ZÀ-Ý][a-zà-ÿ]{3,}|[a-zà-ÿ]{4,})(?![A-Za-zÀ-ÿ])/g) || []).length;
 
 // Lê a carta. Devolve { nome, qualidadeNome, numero, total, numeros, idioma, textos } — campos podem vir vazios.
 export async function lerCarta(carta, { progresso } = {}) {
@@ -248,9 +272,20 @@ export async function lerCarta(carta, { progresso } = {}) {
   const lat = await worker('eng+por');
   const textos = {};
 
-  const { achados: numeros, trechos: trechosNumero } = await lerNumero(lat, carta, textos);
+  const { achados: numeros, trechos: trechosNumero, posicao: posicaoNumero } = await lerNumero(lat, carta, textos);
   const textoImg = recortar(carta, REGIOES.texto, 1400, 'adaptativo');
   textos.texto = await reconhecer(lat, textoImg);
+  // carta "full art" (texto sobre a arte brilhante): a análise de página do OCR (modo 3) às vezes não acha nada;
+  // lido como um bloco só (modo 6), o texto aparece
+  if (contarPalavrasLatinas(textos.texto) < 3) {
+    const bloco = await reconhecer(lat, textoImg, { tessedit_pageseg_mode: '6' });
+    if (contarPalavrasLatinas(bloco) > contarPalavrasLatinas(textos.texto)) { textos.textoPagina = textos.texto; textos.texto = bloco; }
+  }
+  // ainda pouco texto: lê em tons de cinza (sem binarizar), que aguenta melhor o brilho da arte por trás
+  if (contarPalavrasLatinas(textos.texto) < 3) {
+    const cinza = await reconhecer(lat, recortar(carta, REGIOES.texto, 900, false), { tessedit_pageseg_mode: '6' });
+    if (contarPalavrasLatinas(cinza) > contarPalavrasLatinas(textos.texto)) { textos.textoBinario = textos.texto; textos.texto = cinza; }
+  }
   let melhorNome = await lerNome(lat, carta, textos);
 
   let idioma = classificarTexto(`${textos.nome}\n${textos.texto}`);
@@ -258,7 +293,7 @@ export async function lerCarta(carta, { progresso } = {}) {
   // japonesa/chinesa/coreana, e o OCR asiático só "inventaria" kana a partir das letras latinas.
   // Texto real tem palavras de 4+ letras em minúsculas (ou só a inicial maiúscula: "Fraqueza"); o lixo que o OCR
   // latino tira de ideogramas ou do brilho do holo sai em MAIÚSCULAS ou em pedaços de 2-3 letras ("cet", "fn").
-  const palavrasLatinas = (textos.texto.match(/(?<![A-Za-zÀ-ÿ])(?:[A-ZÀ-Ý][a-zà-ÿ]{3,}|[a-zà-ÿ]{4,})(?![A-Za-zÀ-ÿ])/g) || []).length;
+  const palavrasLatinas = contarPalavrasLatinas(textos.texto);
   // Latino, mas sem decidir entre inglês e português: lê também o rodapé da caixa de texto (fraqueza/recuo e o texto
   // da Pokédex, onde costuma estar a frase mais longa). O copyright em inglês do rodapé não atrapalha: não tem
   // nenhuma das palavras-chave de EN/PT.
@@ -284,10 +319,20 @@ export async function lerCarta(carta, { progresso } = {}) {
 
   const n = numeros[0] || {};
   // sigla da coleção ("ASC", "PBL"): caixa preta antes do número, nas cartas desde Scarlet & Violet
+  const SO_SIGLA = { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', tessedit_pageseg_mode: '7' };
   const caixaSigla = imagemDaSigla(carta);
-  if (caixaSigla) textos.sigla = await reconhecer(lat, caixaSigla, { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', tessedit_pageseg_mode: '7' });
+  if (caixaSigla) textos.sigla = await reconhecer(lat, caixaSigla, SO_SIGLA);
+  // caixa não achada pela cor (ex.: carta full art, caixa cinza sobre arte escura): lê logo à esquerda do número
+  if (!siglasNoTexto(textos.sigla, { daCaixa: true }).length && posicaoNumero) {
+    const { x0, y0, y1 } = posicaoNumero;
+    const h = y1 - y0, largura = Math.min(0.087, x0 - 0.003);
+    if (largura > 0.03) {
+      textos.siglaPerto = await reconhecer(lat, negativo(recortar(carta, [x0 - largura - 0.003, y0 - h * 0.5, largura, h * 2], 500, false)), SO_SIGLA);
+    }
+  }
   const siglas = [...new Set([
     ...siglasNoTexto(textos.sigla, { daCaixa: true }),
+    ...siglasNoTexto(textos.siglaPerto, { daCaixa: true }),
     ...siglasNoTexto(['numeroEsq', 'numero'].map((k) => textos[k] || '').join(' ')),
   ])];
   return {

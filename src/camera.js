@@ -5,7 +5,9 @@
 
 // Câmera traseira, moldura-guia e recorte da carta.
 export const PROPORCAO = 63 / 88; // largura / altura de uma carta
-const ALTURA_SAIDA = 2000; // px da carta recortada (o número de coleção é minúsculo)
+// Altura máxima da carta recortada. As faixas do OCR (ampliação, limiar adaptativo) funcionam melhor nessa escala:
+// a foto original do iPhone (4032 px) recortada a 2000 px deixava as letras grossas demais e a leitura piorava.
+const ALTURA_SAIDA = 1200;
 
 let fluxo = null;
 
