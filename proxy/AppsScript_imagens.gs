@@ -54,7 +54,7 @@ const MODELO_PADRAO = 'gemini-3.5-flash-lite';
 const MODELOS_RESERVA = ['gemini-3.8-flash'];
 const INSTRUCAO = [
   'Esta é a foto de uma carta de Pokémon TCG. Leia o que está IMPRESSO na carta e responda só com um JSON:',
-  '{"nome": string, "numero": string, "total": string, "sigla": string, "idioma": string}',
+  '{"nome": string, "numero": string, "total": string, "sigla": string, "idioma": string, "extra": string}',
   '- nome: o nome da carta como impresso, no idioma da carta, sem o HP/PS e sem "Básico"/"Estágio 1". Inclua sufixos',
   '  que fazem parte do nome (ex, V, VMAX, VSTAR, GX, EX, Prime, de Treinador como "Gabite da Cíntia").',
   '- numero e total: o número de coleção no rodapé, "090/084" -> numero "090", total "084" (mantenha zeros e letras,',
@@ -63,6 +63,12 @@ const INSTRUCAO = [
   '  ao lado ("PT"). Vazio se a carta não tiver.',
   '- idioma: o idioma do texto da carta: EN, PT, JP, KO, ZH-TW (chinês tradicional), ZH-CN (simplificado), FR, DE,',
   '  ES ou IT.',
+  '- extra: o acabamento da carta, pelo brilho e pelo padrão visíveis na foto:',
+  '  "Master Ball" = padrão brilhante de várias Master Balls (roxas) fora da arte;',
+  '  "Pokeball Foil" = padrão brilhante de várias Poké Balls fora da arte;',
+  '  "Reverse Foil" = brilho/holográfico em toda a carta FORA da arte, com a arte sem brilho;',
+  '  "Foil" = brilho/holográfico só DENTRO da arte, ou carta inteira brilhante (full art, ilustração especial);',
+  '  "Normal" = sem brilho holográfico. Se não der para ver o brilho na foto, use "".',
   'Se algo não estiver legível, use "". Não invente.',
 ].join('\n');
 

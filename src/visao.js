@@ -29,7 +29,11 @@ export function fotoParaEnvio(canvas) {
 // Idioma devolvido pelo modelo -> código do app (o mesmo do OCR: KO e ZH viram KR e CH na tela).
 const IDIOMAS = { EN: 'EN', PT: 'PT', JP: 'JP', JA: 'JP', KO: 'KO', KR: 'KO', 'ZH-TW': 'CH', 'ZH-CN': 'CHS', ZH: 'ZH', CH: 'CH', CHS: 'CHS' };
 
-// Resposta do modelo ({nome, numero, total, sigla, idioma}) -> o mesmo formato do lerCarta do OCR.
+// Extra devolvido pelo modelo -> nome da coluna Extra ('Normal' = sem extra; '' = não deu para ver).
+const EXTRAS_GEMINI = { normal: 'Normal', foil: 'Foil', holo: 'Foil', 'reverse foil': 'Reverse Foil', reverse: 'Reverse Foil',
+  'pokeball foil': 'Pokeball Foil', 'poke ball foil': 'Pokeball Foil', 'master ball': 'Master Ball', 'masterball': 'Master Ball' };
+
+// Resposta do modelo ({nome, numero, total, sigla, idioma, extra}) -> o mesmo formato do lerCarta do OCR.
 export function normalizarLeitura(carta = {}, modelo = '') {
   const texto = (v) => String(v ?? '').trim();
   const nome = texto(carta.nome);
@@ -52,6 +56,9 @@ export function normalizarLeitura(carta = {}, modelo = '') {
     idioma,
     latino: LATINOS.has(idioma),
     lidoPor: 'Gemini',
+    // undefined = o intermediário ainda não pede o extra (versão antiga): o app usa a análise da imagem
+    extraGemini: carta.extra === undefined ? undefined
+      : EXTRAS_GEMINI[texto(carta.extra).toLowerCase().replace(/[\u00e9\u00c9]/g, 'e')] ?? '',
     textos: { gemini: JSON.stringify({ modelo, ...carta }, null, 1) },
   };
 }

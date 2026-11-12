@@ -235,7 +235,14 @@ async function processar(canvas) {
     mini.getContext('2d').drawImage(canvas, 0, 0, mini.width, mini.height);
 
     const lido = await lerPrimeiroComGemini(canvas) || await lerCarta(canvas, { progresso });
-    try { lido.extraDetectado = detectarExtra(canvas).extra; } catch { lido.extraDetectado = null; }
+    // extra: o do Gemini quando ele viu o brilho; senão, a análise de brilho e cor da foto (extras.js)
+    if (lido.extraGemini) {
+      lido.extraDetectado = lido.extraGemini === 'Normal' ? null : lido.extraGemini;
+      lido.extraFonte = 'Gemini';
+    } else {
+      try { lido.extraDetectado = detectarExtra(canvas).extra; } catch { lido.extraDetectado = null; }
+      lido.extraFonte = 'imagem';
+    }
     // número acima do total (090/084: ilustração especial, secreta): a carta é holo inteira e não existe em Reverse
     const acimaDoTotal = (lido.numeros || []).some((n) => /^\d+$/.test(n.numero) && /^\d+$/.test(n.total) && Number(n.numero) > Number(n.total));
     if (acimaDoTotal && lido.extraDetectado === 'Reverse Foil') lido.extraDetectado = null;
@@ -415,7 +422,8 @@ function mostrarResumo() {
   partes.push(`Lido por: ${lido.lidoPor || 'OCR'}`);
   if (avisoGemini) partes.push(avisoGemini);
   partes.push(`Idioma: ${NOMES_IDIOMA[lido.idioma] || 'não identificado'}`);
-  if (lido.extraDetectado) partes.push(`Extra pela imagem: ${lido.extraDetectado} (confira)`);
+  if (lido.extraDetectado) partes.push(`Extra ${lido.extraFonte === 'Gemini' ? 'pelo Gemini' : 'pela imagem'}: ${lido.extraDetectado} (confira)`);
+  else if (lido.extraFonte === 'Gemini') partes.push('Extra pelo Gemini: Normal (confira)');
   if (erro) partes.push(`Liga: ${erro}`);
   if (statusEdicoes) partes.push(statusEdicoes);
   $('resumo').textContent = partes.join(' · ');
