@@ -13,7 +13,7 @@
 // link da carta na Liga.
 import { semAcento } from './idioma.js';
 import { EDICOES } from './edicoes-liga.js';
-import { semelhanca } from './carta.js';
+import { semelhanca, chave } from './carta.js';
 
 const BUSCA = 'https://www.clubedaliga.com.br/api/cardsearch';
 
@@ -161,6 +161,9 @@ export function semelhancaNumero(a, b) {
   const x = semZeros(a), y = semZeros(b);
   if (!x || !y) return 0;
   if (x === y) return 1;
+  // um dígito do começo perdido na leitura: "4" lido de "94"
+  if (y.length === x.length - 1 && /^\d+$/.test(y) && x.endsWith(y)) return 0.6;
+  if (x.length === y.length - 1 && /^\d+$/.test(x) && y.endsWith(x)) return 0.6;
   if (x.length !== y.length) return 0;
   let nota = 0;
   for (let i = 0; i < x.length; i++) nota += x[i] === y[i] ? 1 : parecidos(x[i], y[i]) ? 0.6 : 0;
@@ -217,17 +220,49 @@ export function pontuar(c, { nome, numero, total, qualidadeNome = 1, trechosNume
     notas.push(Math.max(total ? semelhancaNumero(c.total, total) : 0, totalNosTrechos(c.numero, c.total, trechosNumero) ? 0.9 : 0));
   }
   const nomeUtil = nome && (nome.match(/\p{L}/gu) || []).length >= 3;
-  if (nomeUtil) { pesos.push(0.35 * Math.max(0.2, qualidadeNome)); notas.push(Math.max(semelhanca(c.nome, nome), semelhanca(c.nomeEN, nome))); }
+  if (nomeUtil) { pesos.push(0.35 * Math.max(0.2, qualidadeNome)); notas.push(semelhancaNome(c, nome)); }
   if (!pesos.length) return 0;
   return notas.reduce((s, n, i) => s + n * pesos[i], 0) / pesos.reduce((s, p) => s + p, 0);
 }
+
+// Sufixos que aparecem como logotipo na carta (o OCR lê só "Gengar") mas fazem parte do nome na Liga ("Gengar Prime").
+export const SUFIXOS_NOME = ['ex', 'V', 'VMAX', 'VSTAR', 'GX', 'EX', 'Prime', 'LV.X', 'BREAK', 'Star', 'LEGEND'];
+const SUFIXO = new Set(SUFIXOS_NOME.map((x) => chave(x)));
+
+// O nome do candidato é o nome lido, talvez com um desses sufixos? (0 a 1, como semelhanca)
+export function semelhancaNome(c, nome) {
+  const direta = Math.max(semelhanca(c.nome, nome), semelhanca(c.nomeEN, nome));
+  if (direta >= 0.8 || !nome) return direta;
+  const lidas = String(nome).trim().split(/\s+/).map(chave);
+  for (const n of [c.nome, c.nomeEN]) {
+    const p = String(n ?? '').trim().split(/\s+/).map(chave);
+    if (p.length > lidas.length && lidas.every((w, i) => w === p[i]) && p.slice(lidas.length).every((w) => SUFIXO.has(w))) return 0.9;
+  }
+  return direta;
+}
+export const nomeBate = (c, nome) => semelhancaNome(c, nome) >= 0.8;
 
 // Com o nome legível, mostra só as cartas com esse nome (em português ou inglês): as outras vieram das buscas por
 // número e só confundem. Se nenhuma bater com o nome (nome mal lido), devolve a lista toda.
 export function filtrarPorNome(lista, nome, qualidadeNome = 1) {
   if (!nome || qualidadeNome < 0.5) return lista;
-  const mesmas = lista.filter((c) => Math.max(semelhanca(c.nome, nome), semelhanca(c.nomeEN, nome)) >= 0.8);
+  const mesmas = lista.filter((c) => nomeBate(c, nome));
   return mesmas.length ? mesmas : lista;
+}
+
+// Idioma da edição pela tabela de edições: nome com "(Japanese)", "(Chinese)", "(Korean)", "Japonesas"... ou sigla no
+// padrão das coleções japonesas (s4, SV7, sm10b, XY8R, BW5, CP6, M6a; "JP" no fim). Exceções em inglês/português:
+// SV1 (Escarlate e Violeta) e as coleções do McDonald's. Sem pista: null.
+const CODIGO_JAPONES = /^(?:s|sv|sm|m|xy|bw|cp|sp)\d+[a-z]?$/i;
+export function idiomaPelaEdicao(id) {
+  const [sigla = '', nome = ''] = EDICOES[id] || [];
+  if (!sigla) return null;
+  if (/chinese|chin[eê]s|\(ch\)/i.test(nome)) return 'ZH';
+  if (/korean|corean|\(kr\)/i.test(nome)) return 'KO';
+  if (/japanese|japon|\(jp\)/i.test(nome)) return 'JP';
+  if (sigla === 'SV1' || /mcdonald/i.test(nome)) return null;
+  if (/JP$/i.test(sigla) || CODIGO_JAPONES.test(sigla)) return 'JP';
+  return null;
 }
 
 // Idioma da edição pela numeração da Liga: as edições asiáticas que repetem a numeração de outra ganham um sufixo
@@ -235,7 +270,7 @@ export function filtrarPorNome(lista, nome, qualidadeNome = 1) {
 // A busca da Liga não informa o idioma da edição; ele só aparece na página da carta, protegida pelo Cloudflare.
 export function idiomaDaEdicao(c) {
   const m = String(c.numero ?? '').toUpperCase().match(/^\d+(JP|C|K)$/);
-  if (!m) return null;
+  if (!m) return idiomaPelaEdicao(c.edicao);
   return { JP: 'JP', C: 'ZH', K: 'KO' }[m[1]];
 }
 
@@ -352,6 +387,34 @@ export async function buscarCandidatos(lido) {
       && semZeros(c.total) === semZeros(lido.total) && Math.max(semelhanca(c.nome, lido.nome || ''), semelhanca(c.nomeEN, lido.nome || '')) >= 0.85);
     if ((lido.qualidadeNome ?? 1) >= 0.5 && exata) break;
   }
+  // Nome legível, mas nenhuma carta com esse nome bate com o número ou o total lidos. Duas causas comuns:
+  //  - o primeiro dígito do número se perdeu ("4/102" lido de "94/102"): busca "Gengar (014" ... "Gengar (094";
+  //    reimpressões como a coleção clássica de 30 anos ficam na Liga com outro total ("Gengar (094/30)");
+  //  - falta o sufixo que vem como logotipo ("Gengar Prime").
+  const nomeBom = lido.nome && (lido.qualidadeNome ?? 1) >= 0.5 && chave(lido.nome).length >= 3;
+  const achou = () => [...vistos.values()].some((c) => nomeBate(c, lido.nome)
+    && ((lido.total && semZeros(c.total) === semZeros(lido.total)) || (lido.numero && semelhancaNumero(c.numero, lido.numero) >= 0.9)));
+  if (nomeBom && !achou()) {
+    const nomeBusca = lido.nome.trim();
+    const n = semZeros(lido.numero);
+    const extras = [];
+    if (/^\d{1,2}$/.test(n)) for (let d = 1; d <= 9; d++) extras.push(`${nomeBusca} (${`${d}${n}`.padStart(3, '0')}`);
+    for (const sufixo of SUFIXOS_NOME) extras.push(`${nomeBusca} ${sufixo}`);
+    for (const consulta of extras) {
+      try {
+        for (const item of await pedir(consulta)) {
+          const c = converter(item);
+          if (!vistos.has(c.id)) vistos.set(c.id, { ...c, nota: pontuar(c, lido) });
+        }
+      } catch (e) {
+        if (/falar com a Liga/.test(e.message)) break;
+      }
+      // os 9 "dígito perdido" rodam sempre (vários podem existir em outro idioma); os sufixos param no primeiro que serve
+      if (!consulta.includes(' (') && achou()) break;
+    }
+  }
   if (!algumaDeuCerto && erro) throw erro;
-  return [...vistos.values()].sort((a, b) => b.nota - a.nota).slice(0, 12);
+  // as cartas com o nome lido vêm antes: o corte em 12 não pode deixá-las de fora
+  const peso = (c) => (nomeBom && nomeBate(c, lido.nome) ? 1 : 0);
+  return [...vistos.values()].sort((a, b) => peso(b) - peso(a) || b.nota - a.nota).slice(0, 12);
 }
