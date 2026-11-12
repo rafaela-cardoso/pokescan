@@ -59,6 +59,8 @@ const RUIDO = [
   /\b(BASIC|BASICO|BÁSICO|BASIQUE|STAGE\s*[12]?|ESTAGIO\s*[12]?|ESTÁGIO\s*[12]?|EVOLVES\s+FROM.*|EVOLUI\s+DE.*|EVOLUCAO.*|EVOLUÇÃO.*)\b/gi,
   /\b(TRAINER|TREINADOR|ITEM|SUPPORTER|APOIADOR|STADIUM|ESTADIO|ESTÁDIO|POKEMON\s+TOOL|FERRAMENTA\s+POKEMON|ENERGY|ENERGIA)\b/gi,
 ];
+// Ligações minúsculas que fazem parte do nome ("Gabite da Cíntia", "Team Rocket's", "Misty's").
+const LIGACOES = new Set(['da', 'de', 'do', 'das', 'dos', 'di', 'du', 'del', 'of', 'la', 'le']);
 // Sufixos de mecânica que fazem parte do nome e devem ser mantidos como estão.
 const SUFIXOS = { ex: 'ex', gx: 'GX', v: 'V', vmax: 'VMAX', vstar: 'VSTAR', vunion: 'V-UNION', lvx: 'LV.X', break: 'BREAK', prime: 'Prime' };
 
@@ -77,6 +79,8 @@ export function extrairNome(texto) {
     let s = linha;
     for (const re of RUIDO) s = s.replace(re, ' ');
     s = s.replace(/[^\p{L}\p{N}'’.\- ]/gu, ' ').replace(/\s+/g, ' ').trim();
+    // inicial grande separada do resto pelo OCR (fonte das Scarlet & Violet): "G abite" -> "Gabite"
+    s = s.replace(/(^|\s)(\p{Lu}) (\p{Ll}{2,})/gu, '$1$2$3');
     const partes = s.split(' ').map((p) => p.replace(/^[.'’-]+|[.'’-]+$/g, '')).filter(Boolean);
     // fica com o maior trecho seguido de pedaços com cara de nome
     let melhor = [], atual = [];
@@ -102,7 +106,9 @@ export function qualidadeNome(nome) {
   let nota = 1;
   // maiúsculas no meio da palavra ("sSNÉi") e muitas palavras curtas são sinais de leitura ruim
   for (const p of palavras) if (/\p{Ll}\p{Lu}/u.test(p) && !SUFIXOS[p.toLowerCase()]) nota -= 0.35;
-  const curtas = palavras.filter((p) => p.length <= 2 && !SUFIXOS[p.toLowerCase()]).length;
+  // palavra toda em MAIÚSCULAS ("TARA") costuma ser lixo do desenho ou do brilho; nomes vêm em "Pikachu"
+  for (const p of palavras) if (p.length >= 3 && !/\p{Ll}/u.test(p) && !SUFIXOS[p.toLowerCase()]) nota -= 0.3;
+  const curtas = palavras.filter((p) => p.length <= 2 && !SUFIXOS[p.toLowerCase()] && !LIGACOES.has(p)).length;
   nota -= 0.2 * curtas;
   if (!/^\p{Lu}/u.test(s)) nota -= 0.15; // nomes começam com maiúscula
   if (palavras.length > 4) nota -= 0.2;

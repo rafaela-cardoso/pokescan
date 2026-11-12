@@ -53,6 +53,7 @@ jobs:
           POKESCAN_PROXY_IMAGENS: ${{ vars.POKESCAN_PROXY_IMAGENS }}
           POKESCAN_PLANILHA: ${{ vars.POKESCAN_PLANILHA }}
           POKESCAN_ABA: ${{ vars.POKESCAN_ABA }}
+          POKESCAN_PASTA_DRIVE: ${{ vars.POKESCAN_PASTA_DRIVE }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

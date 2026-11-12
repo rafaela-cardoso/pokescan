@@ -139,7 +139,8 @@ input, select {
   border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); font: inherit;
 }
 input:focus, select:focus { outline: 2px solid var(--destaque); outline-offset: 1px; }
-.linha { display: grid; grid-template-columns: 1fr 1fr 72px; gap: 10px; }
+.linha { display: grid; grid-template-columns: 1fr 1fr 84px 64px; gap: 8px; }
+.linha input { min-width: 0; }
 .opcao { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; font-size: 15px; }
 .opcao input { width: 20px; min-height: 20px; margin-top: 2px; flex: none; accent-color: var(--destaque); }
 .ajuda { font-size: 13px; color: var(--suave); margin: 0 0 10px; }

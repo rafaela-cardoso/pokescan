@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { separarNomeLiga, converter, linkLiga, semelhancaNumero, pontuar, consultas, urlBusca, variacoesNumero } from '../src/liga.js';
+import { separarNomeLiga, converter, linkLiga, semelhancaNumero, pontuar, consultas, urlBusca, variacoesNumero,
+  edicaoDoItem, siglaDaEdicao, siglasNoTexto, filtrarPorSigla, siglaParaLink } from '../src/liga.js';
 
 // Respostas reais da API de busca da Liga (query "026/128").
 const ITENS = [
@@ -161,4 +162,40 @@ test('sufixo JP da Liga ("008JP/032") é edição japonesa', async () => {
   assert.equal(idiomaDaEdicao(c), 'JP');
   const outra = converter({ __key: 'y', sNomeIdiomaPrincipal: 'Pikachu (030/128)' });
   assert.deepEqual(filtrarPorIdioma([c, outra], 'PT').map((x) => x.numero), ['030']);
+});
+
+// ---------- sigla da coleção ----------
+test('edição e sigla vêm da chave da busca', () => {
+  const c = converter({ __key: 'marketplace:cards:tcg2:7529|754|110', sNomeIdiomaPrincipal: 'Gabite da C&iacute;ntia (110/217)', sPathImage: '//x/cd/754/a.jpg' });
+  assert.equal(c.edicao, '754');
+  assert.equal(c.sigla, 'ASC');
+  assert.equal(edicaoDoItem({ sPathImage: '//repositorio/cd/792/x.jpg' }), '792');
+  assert.equal(siglaDaEdicao('826'), 'DLR');
+});
+
+test('siglas lidas no rodapé: só as que existem na Liga, com trocas de letra e dígito', () => {
+  assert.deepEqual(siglasNoTexto('0 ASC'), ['ASC']);
+  assert.deepEqual(siglasNoTexto('I A5CPT 110/217'), ['ASC']);
+  assert.deepEqual(siglasNoTexto('WVASVSCAITNVEN CVAAMETREAR'), []);
+  assert.deepEqual(siglasNoTexto('110 217 2026'), []);
+  // lido só na caixa da sigla: o "PT" miúdo vira uma letra a mais
+  assert.deepEqual(siglasNoTexto('ASCH', { daCaixa: true }), ['ASC']);
+  assert.deepEqual(siglasNoTexto('ASCH'), [], 'fora da caixa, o começo do trecho não vale');
+});
+
+test('filtro pela sigla: mantém a coleção e as variantes dela (ASCES, ASCPB)', () => {
+  const lista = [{ id: 1, sigla: 'ASC' }, { id: 2, sigla: 'ASCES' }, { id: 3, sigla: 'ASCPB' }, { id: 4, sigla: 'PBL' }];
+  assert.deepEqual(filtrarPorSigla(lista, ['ASC']).map((c) => c.id), [1, 2, 3]);
+  assert.equal(filtrarPorSigla(lista, ['DLR']), lista, 'sigla que não bate com nada não esconde as cartas');
+  assert.equal(filtrarPorSigla(lista, []), lista);
+});
+
+test('link da Liga na edição certa', () => {
+  const c = { nomeLiga: 'Pikachu (026/128)', numero: '026', sigla: '30C' };
+  assert.equal(siglaParaLink(c, []), '30C');
+  assert.equal(siglaParaLink(c, ['PBL']), 'PBL', 'a lida na carta ganha da edição que a busca devolveu');
+  assert.equal(siglaParaLink({ ...c, sigla: 'ASCPB' }, ['ASC']), 'ASCPB', 'variante da mesma coleção: fica a exata');
+  assert.equal(linkLiga('Goldeen (013/084)', { sigla: 'PBL', numero: '013' }),
+    'https://www.ligapokemon.com.br/?view=cards%2Fcard&tipo=1&card=Goldeen%20(013%2F084)&ed=PBL&num=013');
+  assert.equal(linkLiga('Goldeen (013/084)'), 'https://www.ligapokemon.com.br/?view=cards%2Fcard&tipo=1&card=Goldeen%20(013%2F084)');
 });

@@ -8,7 +8,8 @@
     "start": "node scripts/servidor.js",
     "test": "node --test \"testes/*.test.js\"",
     "checar": "node scripts/checar-sintaxe.js",
-    "site": "node scripts/montar-site.js"
+    "site": "node scripts/montar-site.js",
+    "edicoes": "node scripts/atualizar-edicoes.js"
   },
   "engines": {
     "node": ">=20"

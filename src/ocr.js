@@ -11,16 +11,21 @@
 // Idioma como no bot: primeiro "eng+por"; se não reconhecer, "jpn+kor+chi_tra+chi_sim".
 import { classificarTexto, LATINOS } from './idioma.js';
 import { extrairNome, extrairNumero, qualidadeNome } from './carta.js';
+import { siglasNoTexto } from './liga.js';
 
 // Regiões em frações da carta: [x, y, largura, altura]
 export const REGIOES = {
   nome: [0.03, 0.025, 0.68, 0.085],
   nomeLargo: [0.03, 0.015, 0.94, 0.11],
+  // Scarlet & Violet: o nome vem depois do selo "BÁSICO"/"ESTÁGIO 1", que confunde as faixas acima
+  nomeSV: [0.17, 0.02, 0.5, 0.065],
   numeroEsq: [0.0, 0.905, 0.42, 0.08],
   numeroDir: [0.58, 0.905, 0.42, 0.08],
   numero: [0.0, 0.88, 1.0, 0.115],
   texto: [0.04, 0.45, 0.92, 0.47], // até 92%: abaixo vêm o "Illus." e o copyright, sempre em inglês
-  rodapeTexto: [0.04, 0.86, 0.92, 0.10], // fraqueza/recuo e texto da Pokédex (só para separar EN de PT)
+  rodapeTexto: [0.04, 0.86, 0.92, 0.10],
+  // onde procurar a caixa preta da sigla da coleção ("ASC PT"), à esquerda do número
+  rodapeSigla: [0.02, 0.88, 0.4, 0.11], // fraqueza/recuo e texto da Pokédex (só para separar EN de PT)
 };
 
 const T = () => {
@@ -122,6 +127,71 @@ export function limiarAdaptativo(d, w, h, janela = 41, folga = 14) {
   for (let p = 0; p < saida.length; p++) d[p * 4] = d[p * 4 + 1] = d[p * 4 + 2] = saida[p];
 }
 
+// Caixa escura da sigla (letras brancas sobre preto) dentro de uma imagem cinza: o maior bloco escuro "retangular"
+// (largura 1,5 a 6 vezes a altura, bem preenchido). `cinza` = Uint8Array w*h. Devolve { x, y, w, h } em pixels ou null.
+// "Escuro" é relativo à faixa (a foto pode estar escura ou clara): bem abaixo do tom mais comum (o fundo da carta).
+export function acharCaixaEscura(cinza, w, h, limiar = limiarCaixa(cinza)) {
+  const visto = new Uint8Array(w * h);
+  const pilha = [];
+  let melhor = null;
+  for (let inicio = 0; inicio < w * h; inicio++) {
+    if (visto[inicio] || cinza[inicio] >= limiar) continue;
+    let x0 = w, y0 = h, x1 = 0, y1 = 0, n = 0;
+    visto[inicio] = 1; pilha.push(inicio);
+    while (pilha.length) {
+      const p = pilha.pop();
+      const x = p % w, y = (p - x) / w;
+      n++;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
+        if (q >= 0 && !visto[q] && cinza[q] < limiar) { visto[q] = 1; pilha.push(q); }
+      }
+    }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const proporcao = bw / bh, cheio = n / (bw * bh);
+    if (bh < h * 0.15 || bh > h * 0.8 || proporcao < 1.5 || proporcao > 6 || cheio < 0.45) continue;
+    if (!melhor || n > melhor.n) melhor = { x: x0, y: y0, w: bw, h: bh, n };
+  }
+  return melhor && { x: melhor.x, y: melhor.y, w: melhor.w, h: melhor.h };
+}
+
+function limiarCaixa(cinza) {
+  const hist = new Uint32Array(256);
+  for (const v of cinza) hist[v]++;
+  let acum = 0, mediana = 0, minimo = -1;
+  for (let t = 0; t < 256; t++) {
+    if (minimo < 0 && hist[t] > cinza.length * 0.002) minimo = t;
+    acum += hist[t];
+    if (acum >= cinza.length / 2) { mediana = t; break; }
+  }
+  return Math.max(minimo + 1, minimo + (mediana - minimo) * 0.45);
+}
+
+// Recorta a caixa da sigla e devolve a imagem em negativo (letras escuras sobre fundo claro), ou null.
+export function imagemDaSigla(carta) {
+  const [fx, fy, fw, fh] = REGIOES.rodapeSigla;
+  const sx = fx * carta.width, sy = fy * carta.height, sw = fw * carta.width, sh = fh * carta.height;
+  const escala = 360 / sw;
+  const w = 360, h = Math.max(1, Math.round(sh * escala));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(carta, sx, sy, sw, sh, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const cinza = new Uint8Array(w * h);
+  for (let p = 0; p < cinza.length; p++) cinza[p] = 0.299 * d[p * 4] + 0.587 * d[p * 4 + 1] + 0.114 * d[p * 4 + 2];
+  const caixa = acharCaixaEscura(cinza, w, h);
+  if (!caixa) return null;
+  const k = sw / w;
+  const r = [(sx + caixa.x * k) / carta.width, (sy + caixa.y * k) / carta.height, (caixa.w * k) / carta.width, (caixa.h * k) / carta.height];
+  const img = recortar(carta, r, 500, false);
+  const x = img.getContext('2d', { willReadFrequently: true });
+  const dados = x.getImageData(0, 0, img.width, img.height);
+  for (let i = 0; i < dados.data.length; i += 4) dados.data[i] = dados.data[i + 1] = dados.data[i + 2] = 255 - dados.data[i];
+  x.putImageData(dados, 0, 0);
+  return img;
+}
+
 async function reconhecer(w, imagem, parametros) {
   await w.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3', ...parametros });
   const { data } = await w.recognize(imagem);
@@ -158,17 +228,17 @@ async function lerNumero(w, carta, textos) {
   return { achados, trechos: [...trechos] };
 }
 
-// Lê o nome em duas versões de faixa e fica com a mais "legível".
+// Lê o nome em três versões de faixa e fica com a mais "legível" (empate: a mais longa, que perdeu menos letras).
 async function lerNome(w, carta, textos) {
   const opcoes = [];
-  for (const [rotulo, regiao, psm] of [['nome', REGIOES.nome, '7'], ['nomeLargo', REGIOES.nomeLargo, '6']]) {
+  for (const [rotulo, regiao, psm] of [['nome', REGIOES.nome, '7'], ['nomeSV', REGIOES.nomeSV, '7'], ['nomeLargo', REGIOES.nomeLargo, '6']]) {
     const t = await reconhecer(w, recortar(carta, regiao, 1600), { tessedit_pageseg_mode: psm });
     textos[rotulo] = t;
     const nome = extrairNome(t);
     opcoes.push({ nome, q: qualidadeNome(nome) });
-    if (opcoes[0].q >= 0.85) break; // a faixa justa já deu um nome limpo
+    if (opcoes.length >= 2 && Math.max(...opcoes.map((o) => o.q)) >= 1) break; // já há um nome limpo
   }
-  opcoes.sort((a, b) => b.q - a.q);
+  opcoes.sort((a, b) => b.q - a.q || b.nome.length - a.nome.length);
   return opcoes[0];
 }
 
@@ -213,7 +283,15 @@ export async function lerCarta(carta, { progresso } = {}) {
   }
 
   const n = numeros[0] || {};
+  // sigla da coleção ("ASC", "PBL"): caixa preta antes do número, nas cartas desde Scarlet & Violet
+  const caixaSigla = imagemDaSigla(carta);
+  if (caixaSigla) textos.sigla = await reconhecer(lat, caixaSigla, { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', tessedit_pageseg_mode: '7' });
+  const siglas = [...new Set([
+    ...siglasNoTexto(textos.sigla, { daCaixa: true }),
+    ...siglasNoTexto(['numeroEsq', 'numero'].map((k) => textos[k] || '').join(' ')),
+  ])];
   return {
+    siglas,
     nome: melhorNome.nome, qualidadeNome: melhorNome.q,
     numero: n.numero || '', total: n.total || '', numeros, trechosNumero,
     // texto latino de verdade, mesmo sem dar para separar EN de PT: basta para tirar as edições asiáticas

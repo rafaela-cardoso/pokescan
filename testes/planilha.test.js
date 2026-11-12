@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   idDaPlanilha, intervalo, letraColuna, mapearColunas, encontrarCabecalho, proximaLinha, montarEscritas,
-  linhaDaMesmaCarta, quantidadeExistente, CABECALHO_PADRAO,
+  linhaDaMesmaCarta, quantidadeExistente, CABECALHO_PADRAO, celulaLink,
 } from '../src/planilha.js';
 
 const ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abc';
@@ -34,8 +34,16 @@ test('o app só preenche Quantidade, Carta, Estado, Extra, Idioma e Link liga', 
   const e = montarEscritas('Leilão', 1, cab.mapa, { ...registro, extra: 'Master Ball', quantidade: 2 });
   assert.deepEqual(e.map((x) => [x.range, x.values[0][0]]), [
     ["'Leilão'!A2", 2], ["'Leilão'!B2", 'Pikachu (026/128)'], ["'Leilão'!C2", 'NM'],
-    ["'Leilão'!E2", 'Master Ball'], ["'Leilão'!F2", 'PT'], ["'Leilão'!I2", 'https://liga/x'],
+    ["'Leilão'!E2", 'Master Ball'], ["'Leilão'!F2", 'PT'],
   ]);
+});
+
+test('Link liga vai como texto "Abrir na Liga" com o link', () => {
+  const r = celulaLink(552223964, 1, 8, 'https://liga/x').updateCells;
+  assert.deepEqual(r.start, { sheetId: 552223964, rowIndex: 1, columnIndex: 8 });
+  const cel = r.rows[0].values[0];
+  assert.equal(cel.userEnteredValue.stringValue, 'Abrir na Liga');
+  assert.equal(cel.textFormatRuns[0].format.link.uri, 'https://liga/x');
 });
 
 test('colunas como Número, Nome (com Carta), Data e Preço nunca são preenchidas', () => {
@@ -118,7 +126,9 @@ async function comSheetsFalso(linhas, registroLido) {
   const original = globalThis.fetch;
   globalThis.fetch = async (url, op = {}) => {
     if (op.method === 'POST') enviados.push(JSON.parse(op.body));
-    const corpo = op.method ? {} : { values: linhas };
+    const corpo = op.method ? {}
+      : String(url).includes('fields=') ? { properties: { title: 'Cartas' }, sheets: [{ properties: { title: 'Leilão', sheetId: 77 } }] }
+        : { values: linhas };
     return { ok: true, status: 200, json: async () => corpo };
   };
   try {
@@ -153,4 +163,11 @@ test('gid da aba no link da planilha', async () => {
   assert.equal(gidDaPlanilha(`https://docs.google.com/spreadsheets/d/${ID}/edit?gid=552223964#gid=552223964`), '552223964');
   assert.equal(gidDaPlanilha(`https://docs.google.com/spreadsheets/d/${ID}/edit#gid=0`), '0');
   assert.equal(gidDaPlanilha(`https://docs.google.com/spreadsheets/d/${ID}/edit`), '');
+});
+
+test('carta nova com coluna Link liga: grava o hyperlink "Abrir na Liga" na mesma linha', async () => {
+  const { r, enviados } = await comSheetsFalso([CABECALHO_PADRAO], { ...registro, carta: 'Eevee (133/165)' });
+  assert.equal(r.linha, 2);
+  assert.ok(!enviados[0].data.some((d) => d.range.includes('!I')), 'o link não vai como texto puro');
+  assert.deepEqual(enviados[1], { requests: [celulaLink(77, 1, 8, 'https://liga/x')] });
 });
