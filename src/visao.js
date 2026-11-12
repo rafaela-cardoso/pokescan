@@ -36,7 +36,11 @@ const EXTRAS_GEMINI = { normal: 'Normal', foil: 'Foil', holo: 'Foil', 'reverse f
 // Resposta do modelo ({nome, numero, total, sigla, idioma, extra}) -> o mesmo formato do lerCarta do OCR.
 export function normalizarLeitura(carta = {}, modelo = '') {
   const texto = (v) => String(v ?? '').trim();
-  const nome = texto(carta.nome);
+  const idioma = IDIOMAS[texto(carta.idioma).toUpperCase()] || '';
+  // A Liga só tem nomes em inglês e português: carta em japonês, coreano ou chinês busca pelo nome em inglês
+  const impresso = texto(carta.nome);
+  const ingles = texto(carta.nomeIngles);
+  const nome = !LATINOS.has(idioma) && ingles ? ingles : impresso;
   let numero = texto(carta.numero).toUpperCase().replace(/\s+/g, '');
   let total = texto(carta.total).toUpperCase().replace(/\s+/g, '');
   // às vezes vem tudo junto em "numero" ("090/084")
@@ -44,10 +48,10 @@ export function normalizarLeitura(carta = {}, modelo = '') {
     const n = extrairNumero(numero);
     if (n) ({ numero, total } = n);
   }
-  const idioma = IDIOMAS[texto(carta.idioma).toUpperCase()] || '';
   const sigla = texto(carta.sigla).toUpperCase().replace(/[^A-Z0-9-]/g, '');
   return {
     nome,
+    nomeImpresso: impresso,
     qualidadeNome: nome ? Math.max(0.85, qualidadeNome(nome)) : 0,
     numero, total,
     numeros: numero ? [{ numero, total }] : [],

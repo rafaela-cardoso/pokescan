@@ -9,7 +9,8 @@
 // Parte pura (testável): `novoDetector()` recebe miniaturas (Uint8Array de cinza, mesmo tamanho) e diz quando
 // disparar. Imagens que não deram carta (mesa vazia) entram em `ignorar()`, para não disparar de novo nelas.
 
-export const LARGURA = 40, ALTURA = 56; // miniatura da moldura (proporção de carta)
+// miniatura pequena da moldura (proporção de carta): a redução já borra o tremor da mão e o ruído da câmera
+export const LARGURA = 24, ALTURA = 34;
 
 // Diferença média (0-255) entre duas miniaturas.
 export function diferenca(a, b) {
@@ -29,18 +30,21 @@ export function contraste(a) {
   return Math.sqrt(s / a.length);
 }
 
-export function novoDetector({ parado = 4, mudou = 14, quadrosParado = 3, contrasteMinimo = 18 } = {}) {
-  let anterior = null, estavel = 0;
+// parado: diferença média (0-255) entre quadros seguidos que ainda conta como parado (mão segurando o celular
+// treme); mudou: diferença mínima para ser outra carta; contrasteMinimo: abaixo disso é fundo liso
+export function novoDetector({ parado = 9, mudou = 16, quadrosParado = 3, contrasteMinimo = 14 } = {}) {
+  let anterior = null, estavel = 0, ultimoMovimento = 0;
   let ultimaFoto = null;
   const ignoradas = [];
   return {
     // Mais um quadro. Devolve true quando é hora de tirar a foto.
     quadro(q) {
       const mov = diferenca(q, anterior);
+      ultimoMovimento = mov;
       anterior = q;
       estavel = mov < parado ? estavel + 1 : 0;
       if (estavel < quadrosParado) return false;
-      if (contraste(q) < contrasteMinimo) return false; // moldura vazia, fundo liso
+      if (contraste(q) < contrasteMinimo) { ultimaFoto = null; return false; } // moldura vazia: a mesma carta pode voltar
       if (ultimaFoto && diferenca(q, ultimaFoto) < mudou) return false; // ainda a mesma carta
       if (ignoradas.some((x) => diferenca(q, x) < mudou)) return false; // mesa vazia já vista
       ultimaFoto = q;
@@ -55,5 +59,6 @@ export function novoDetector({ parado = 4, mudou = 14, quadrosParado = 3, contra
     // Foto tirada pelo botão: conta como a última, para a automática não repetir a mesma carta.
     fotoManual(q) { if (q) ultimaFoto = q; estavel = 0; },
     get parado() { return estavel; },
+    get movimento() { return ultimoMovimento; },
   };
 }

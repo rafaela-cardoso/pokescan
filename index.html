@@ -58,8 +58,9 @@
       <label class="modo"><input id="fotoAutomatica" type="checkbox"> Foto automática</label>
       <label class="modo"><input id="modoFila" type="checkbox"> Várias cartas (fila)</label>
       <span id="statusFila" class="status-fila"></span>
-      <button id="revisarFila" class="btn pequeno" type="button" hidden>Revisar fila</button>
+      <button id="abrirFila" class="btn pequeno" type="button" hidden>Abrir fila</button>
     </div>
+
 
     <section id="resultado" class="resultado" hidden>
       <div class="resultado-topo">
@@ -117,6 +118,21 @@
       </div>
       <ol id="listaHistorico"></ol>
       <p id="historicoVazio" class="vazio">As cartas gravadas aparecem aqui.</p>
+    </section>
+  </main>
+
+  <main id="telaFila" hidden>
+    <section class="fila">
+      <div class="fila-topo">
+        <button id="voltarEscanear" class="btn secundario" type="button">← Escanear mais cartas</button>
+        <label class="selecionar-todas"><input id="selecionarTodas" type="checkbox"> Todas</label>
+      </div>
+      <p id="filaVazia" class="vazio">A fila está vazia. Ligue "Várias cartas (fila)" na câmera e escaneie.</p>
+      <div id="listaFila" class="lista-fila"></div>
+      <div class="acoes fila-acoes">
+        <button id="descartarSelecionadas" class="btn secundario" type="button">Descartar selecionadas</button>
+        <button id="enviarSelecionadas" class="btn primario" type="button">Enviar selecionadas</button>
+      </div>
     </section>
   </main>
 
