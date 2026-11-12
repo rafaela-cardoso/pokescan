@@ -80,6 +80,19 @@ contam como o mesmo idioma (o liga_price_sheets aceita os dois).
 **Pendentes:** sem internet ou com erro, a carta fica na lista **Gravadas** marcada como pendente. **Enviar pendentes**
 tenta de novo; **Descartar pendentes** apaga as que ainda não foram gravadas (as já gravadas não são afetadas).
 
+## Foto automática e várias cartas
+
+- **Foto automática** (logo abaixo do botão de foto): com a câmera ligada, o app tira a foto sozinho quando uma
+  carta nova fica parada na moldura por um instante (a moldura fica coral enquanto espera). O botão continua
+  funcionando. A mesma carta não é fotografada duas vezes; se a foto saiu sem carta (mesa vazia), o app ignora
+  aquela cena. Com uma carta em revisão, a foto automática espera você gravar ou descartar.
+- **Várias cartas (fila)**: cada foto (automática, do botão ou da galeria) só entra numa fila e é lida em segundo
+  plano, uma por vez (respeitando o limite do Gemini). Passe as cartas uma a uma; depois toque em **Revisar fila**:
+  cada carta abre já buscada na Liga e, ao gravar ou descartar, a próxima abre sozinha. A fila fica só na memória:
+  recarregar o app a perde.
+- **Limpar gravadas** (na lista "Gravadas"): tira da lista as cartas já gravadas; as pendentes ficam e a planilha
+  não muda.
+
 ## Leitura pelo Gemini
 
 O OCR (tesseract.js) lê letra por letra e erra fácil com brilho, arte por trás do texto ou fotos grandes. Com a
@@ -108,6 +121,9 @@ Passo a passo (uma vez):
 
 Sempre que `proxy/AppsScript_imagens.gs` mudar (por exemplo, quando o extra passou a ser pedido ao Gemini), repita os
 passos 2 e 4: cole o código novo e publique uma nova versão. As propriedades do script continuam lá.
+
+Se o Gemini responder que está sobrecarregado (503), o intermediário tenta de novo duas vezes, troca de modelo e,
+se ainda assim falhar, o app espera e tenta mais duas vezes; o OCR só lê em último caso.
 
 Os limites da cota grátis (pedidos por minuto e por dia) aparecem em
 [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).

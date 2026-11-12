@@ -20,6 +20,8 @@ export const PADRAO = {
   proxyImagens: 'https://script.google.com/macros/s/AKfycbwjPirts9jQFRIsy3oit_d6n82RfTTh-7FJclycDKRH73ycMh5oCU4x-p69AkUM7fAF/exec',
   nomeEmIngles: false, // gravar o nome em inglês em vez do nome da Liga (português quando existe)
   salvarDireto: false, // gravar sem revisar quando a leitura tiver confiança alta
+  fotoAutomatica: true, // tira a foto sozinho quando uma carta nova fica parada na moldura (o botão continua)
+  modoFila: false, // várias cartas: só lê e guarda numa fila; a busca na Liga e a revisão vêm depois
   lerComGemini: true, // ler a carta com o Gemini (pelo intermediário; precisa do login Google). Sem ele, só OCR
   salvarFoto: false, // salvar a foto da carta no Google Drive (na pasta abaixo)
   // link da pasta do Drive para as fotos. Na publicação vem da variável POKESCAN_PASTA_DRIVE (não fica no código)

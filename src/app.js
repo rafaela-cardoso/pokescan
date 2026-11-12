@@ -8,6 +8,7 @@ import { PADRAO, ESTADOS } from './config.js';
 import * as camera from './camera.js';
 import { lerCarta, lerIdioma, aquecer } from './ocr.js';
 import { lerComGemini } from './visao.js';
+import { novoDetector, LARGURA as LARG_MINI, ALTURA as ALT_MINI } from './automatico.js';
 import { descobrirIdiomas, filtrarPorIdiomaDaEdicao, confirmarIdiomaDaEdicao, idiomaConhecido } from './edicoes.js';
 import { detectarExtra } from './extras.js';
 import {
@@ -224,18 +225,11 @@ async function lerPrimeiroComGemini(canvas) {
   }
 }
 
-async function processar(canvas) {
-  if (ocupado) return;
-  ocupado = true;
-  $('lendo').hidden = false;
-  $('ler').disabled = true;
-  try {
-    const mini = $('miniatura');
-    mini.width = 189; mini.height = 264;
-    mini.getContext('2d').drawImage(canvas, 0, 0, mini.width, mini.height);
-
-    const lido = await lerPrimeiroComGemini(canvas) || await lerCarta(canvas, { progresso });
-    // extra: o do Gemini quando ele viu o brilho; senão, a análise de brilho e cor da foto (extras.js)
+// Lê a foto (Gemini; OCR só em último caso) e sugere o extra. Não mexe na tela de revisão.
+async function lerImagemDaCarta(canvas, { aoProgresso = progresso } = {}) {
+  const lido = await lerPrimeiroComGemini(canvas) || await lerCarta(canvas, { progresso: aoProgresso });
+  lido.avisoGemini = avisoGemini;
+  // extra: o do Gemini quando ele viu o brilho; senão, a análise de brilho e cor da foto (extras.js)
     if (lido.extraGemini) {
       lido.extraDetectado = lido.extraGemini === 'Normal' ? null : lido.extraGemini;
       lido.extraFonte = 'Gemini';
@@ -246,19 +240,148 @@ async function processar(canvas) {
     // número acima do total (090/084: ilustração especial, secreta): a carta é holo inteira e não existe em Reverse
     const acimaDoTotal = (lido.numeros || []).some((n) => /^\d+$/.test(n.numero) && /^\d+$/.test(n.total) && Number(n.numero) > Number(n.total));
     if (acimaDoTotal && lido.extraDetectado === 'Reverse Foil') lido.extraDetectado = null;
-    $('lendoMsg').textContent = 'Procurando na Liga Pokémon…';
-    leitura = { lido, candidatos: [], escolha: null, erro: '', canvas };
-    await consultarLiga(lido);
-    mostrarResultado();
-    verificarEdicoes(leitura); // em segundo plano: lê o idioma das edições sugeridas
-    if (cfg.salvarDireto && leitura.confiavel) await salvar();
+  return lido;
+}
+
+// A leitura achou alguma carta? (foto automática da mesa vazia ou de uma mão: nada lido)
+const temCarta = (lido) => !!(lido?.nome || lido?.numeros?.length);
+
+// Busca na Liga e abre a revisão da carta.
+async function revisar(canvas, lido) {
+  const mini = $('miniatura');
+  mini.width = 189; mini.height = 264;
+  mini.getContext('2d').drawImage(canvas, 0, 0, mini.width, mini.height);
+  $('lendoMsg').textContent = 'Procurando na Liga Pokémon…';
+  leitura = { lido, candidatos: [], escolha: null, erro: '', canvas };
+  await consultarLiga(lido);
+  mostrarResultado();
+  verificarEdicoes(leitura); // em segundo plano: lê o idioma das edições sugeridas
+  if (cfg.salvarDireto && leitura.confiavel) await salvar();
+}
+
+// Uma carta: lê, busca na Liga e mostra. No modo fila, só guarda a foto para ler em segundo plano.
+async function processar(canvas, { automatica = false } = {}) {
+  if (cfg.modoFila) return enfileirar(canvas, automatica);
+  if (ocupado) return;
+  ocupado = true;
+  $('lendo').hidden = false;
+  $('ler').disabled = true;
+  try {
+    const lido = await lerImagemDaCarta(canvas);
+    if (automatica && !temCarta(lido)) { detector.ignorar(); return; } // mesa vazia: não abre nada
+    await revisar(canvas, lido);
   } catch (e) {
     avisar(e.message || 'Falha na leitura.', 'erro');
   } finally {
     ocupado = false;
     $('lendo').hidden = true;
     $('ler').disabled = false;
+    mostrarFila();
   }
+}
+
+// ---------- várias cartas (fila) ----------
+// Cada foto entra na fila e é lida em segundo plano, uma por vez (a cota grátis do Gemini é de 15 por minuto).
+// "Revisar fila" abre as lidas uma a uma, já buscando na Liga; ao gravar ou descartar, abre a próxima.
+// A fila fica só na memória: recarregar o app a perde.
+const fila = []; // { canvas, automatica, estado: 'lendo' | 'pronta' | 'vazia', lido }
+let lendoFila = false;
+
+function enfileirar(canvas, automatica) {
+  fila.push({ canvas, automatica, estado: 'lendo' });
+  avisar(`Carta ${fila.length} na fila`);
+  mostrarFila();
+  lerFila();
+}
+
+async function lerFila() {
+  if (lendoFila) return;
+  lendoFila = true;
+  try {
+    for (let item; (item = fila.find((i) => i.estado === 'lendo'));) {
+      try {
+        item.lido = await lerImagemDaCarta(item.canvas, { aoProgresso: () => {} });
+        item.estado = temCarta(item.lido) ? 'pronta' : 'vazia';
+      } catch {
+        item.estado = 'vazia';
+      }
+      if (item.estado === 'vazia') {
+        fila.splice(fila.indexOf(item), 1);
+        if (item.automatica) detector.ignorar();
+        else avisar('Não achei carta numa das fotos da fila.');
+      }
+      mostrarFila();
+    }
+  } finally {
+    lendoFila = false;
+  }
+}
+
+function mostrarFila() {
+  const prontas = fila.filter((i) => i.estado === 'pronta').length;
+  const lendo = fila.filter((i) => i.estado === 'lendo').length;
+  $('statusFila').textContent = [lendo && `lendo ${lendo}…`, prontas && `${prontas} pronta(s)`].filter(Boolean).join(' · ');
+  const b = $('revisarFila');
+  b.hidden = !prontas;
+  b.textContent = `Revisar fila (${prontas})`;
+  b.disabled = ocupado || !!leitura;
+}
+
+async function revisarProxima() {
+  if (ocupado || leitura) return;
+  const i = fila.findIndex((x) => x.estado === 'pronta');
+  if (i < 0) return mostrarFila();
+  const [item] = fila.splice(i, 1);
+  ocupado = true;
+  $('lendo').hidden = false;
+  $('ler').disabled = true;
+  mostrarFila();
+  try {
+    await revisar(item.canvas, item.lido);
+  } catch (e) {
+    avisar(e.message || 'Falha na busca.', 'erro');
+  } finally {
+    ocupado = false;
+    $('lendo').hidden = true;
+    $('ler').disabled = false;
+    mostrarFila();
+  }
+}
+
+// ---------- foto automática ----------
+const detector = novoDetector();
+let fotografando = false;
+
+async function tirarFoto({ automatica = false } = {}) {
+  if (!camera.ligada()) return iniciarCamera();
+  if (fotografando) return;
+  fotografando = true;
+  try {
+    if (!automatica) detector.fotoManual(camera.miniaturaDaMoldura($('video'), LARG_MINI, ALT_MINI));
+    const m = $('moldura');
+    m.classList.remove('disparou'); void m.offsetWidth; m.classList.add('disparou');
+    navigator.vibrate?.(25);
+    const canvas = await camera.capturar($('video'));
+    await (cfg.modoFila ? processar(canvas, { automatica }) : (processar(canvas, { automatica }), null));
+  } catch (e) {
+    avisar(e.message, 'erro');
+  } finally {
+    fotografando = false;
+  }
+}
+
+function vigiarMoldura() {
+  setInterval(() => {
+    const m = $('moldura');
+    const livre = cfg.fotoAutomatica && camera.ligada() && !$('telaScanner').hidden && !document.hidden && !fotografando
+      && (cfg.modoFila || (!ocupado && !leitura)); // revisão aberta: não atropela
+    if (!livre) { m.classList.remove('firme'); return; }
+    const q = camera.miniaturaDaMoldura($('video'), LARG_MINI, ALT_MINI);
+    if (!q) return;
+    const disparar = detector.quadro(q);
+    m.classList.toggle('firme', detector.parado >= 2);
+    if (disparar) tirarFoto({ automatica: true });
+  }, 300);
 }
 
 // Busca na Liga com as leituras do número (até 2) e escolhe o candidato, se a nota permitir.
@@ -420,7 +543,9 @@ function mostrarResumo() {
   partes.push(nums.length ? `Número lido: ${nums.join(' ou ')}` : 'Número não lido');
   if (lido.siglas?.length) partes.push(`Coleção lida: ${lido.siglas.join(' ou ')}`);
   partes.push(`Lido por: ${lido.lidoPor || 'OCR'}`);
-  if (avisoGemini) partes.push(avisoGemini);
+  if (lido.avisoGemini) partes.push(lido.avisoGemini);
+  const naFila = fila.filter((i) => i.estado !== 'vazia').length;
+  if (naFila) partes.push(`Na fila: mais ${naFila}`);
   partes.push(`Idioma: ${NOMES_IDIOMA[lido.idioma] || 'não identificado'}`);
   if (lido.extraDetectado) partes.push(`Extra ${lido.extraFonte === 'Gemini' ? 'pelo Gemini' : 'pela imagem'}: ${lido.extraDetectado} (confira)`);
   else if (lido.extraFonte === 'Gemini') partes.push('Extra pelo Gemini: Normal (confira)');
@@ -459,7 +584,9 @@ async function buscarDeNovo() {
 function descartar() {
   leitura = null;
   $('resultado').hidden = true;
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  mostrarFila();
+  if (fila.some((i) => i.estado === 'pronta')) setTimeout(revisarProxima, 400); // próxima carta da fila
+  else window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ---------- gravação ----------
@@ -637,6 +764,17 @@ function descartarPendentes() {
 const textoFoto = (f) => (!f ? '' : f.situacao === 'ok' ? 'foto no Drive'
   : f.situacao === 'pendente' ? `foto pendente${f.erro ? `: ${f.erro}` : ''}` : f.situacao === 'perdida' ? 'foto perdida' : '');
 
+// Tira da lista as cartas já gravadas (as pendentes ficam). Não mexe na planilha.
+function limparGravadas() {
+  const gravadas = historico.filter((h) => !pendente(h)).length;
+  if (!gravadas) return;
+  if (!confirm(`Limpar ${gravadas} carta(s) já gravada(s) da lista? A planilha não muda; as pendentes ficam.`)) return;
+  historico = historico.filter(pendente);
+  gravar('historico', historico);
+  mostrarHistorico();
+  avisar(`${gravadas} carta(s) tirada(s) da lista`);
+}
+
 function mostrarHistorico() {
   const ol = $('listaHistorico');
   ol.innerHTML = '';
@@ -658,6 +796,7 @@ function mostrarHistorico() {
   $('historicoVazio').hidden = historico.length > 0;
   const temPendente = historico.some(pendente);
   $('reenviar').hidden = !temPendente;
+  $('limparGravadas').hidden = !historico.some((h) => !pendente(h));
   $('descartarPendentes').hidden = !temPendente;
 }
 
@@ -703,10 +842,14 @@ function iniciar() {
 
   $('ligarCamera').addEventListener('click', iniciarCamera);
   $('lanterna').addEventListener('click', alternarLanterna);
-  $('ler').addEventListener('click', () => {
-    if (!camera.ligada()) return iniciarCamera();
-    camera.capturar($('video')).then(processar).catch((e) => avisar(e.message, 'erro'));
-  });
+  $('ler').addEventListener('click', () => tirarFoto());
+  $('revisarFila').addEventListener('click', revisarProxima);
+  $('limparGravadas').addEventListener('click', limparGravadas);
+  for (const [id, chave] of [['fotoAutomatica', 'fotoAutomatica'], ['modoFila', 'modoFila']]) {
+    $(id).checked = !!cfg[chave];
+    $(id).addEventListener('change', () => { cfg[chave] = $(id).checked; salvarCfg(); mostrarFila(); });
+  }
+  vigiarMoldura();
   $('arquivo').addEventListener('change', async (ev) => {
     const f = ev.target.files?.[0];
     ev.target.value = '';

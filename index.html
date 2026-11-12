@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#14161c">
+  <meta name="theme-color" content="#4c3a4d">
   <meta name="description" content="Leia cartas com a câmera do celular e grave na sua planilha do Google Sheets.">
   <title>pokescan</title>
   <link rel="manifest" href="manifest.webmanifest">
@@ -54,6 +54,12 @@
       </button>
       <span id="espacoLanterna" class="espaco"></span>
     </nav>
+    <div class="modos">
+      <label class="modo"><input id="fotoAutomatica" type="checkbox"> Foto automática</label>
+      <label class="modo"><input id="modoFila" type="checkbox"> Várias cartas (fila)</label>
+      <span id="statusFila" class="status-fila"></span>
+      <button id="revisarFila" class="btn pequeno" type="button" hidden>Revisar fila</button>
+    </div>
 
     <section id="resultado" class="resultado" hidden>
       <div class="resultado-topo">
@@ -104,6 +110,7 @@
       <div class="historico-topo">
         <h2>Gravadas</h2>
         <div class="historico-acoes">
+          <button id="limparGravadas" class="btn pequeno secundario" type="button" hidden>Limpar gravadas</button>
           <button id="descartarPendentes" class="btn pequeno secundario" type="button" hidden>Descartar pendentes</button>
           <button id="reenviar" class="btn pequeno" type="button" hidden>Enviar pendentes</button>
         </div>
