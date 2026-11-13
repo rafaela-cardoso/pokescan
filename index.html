@@ -60,6 +60,10 @@
       <span id="statusFila" class="status-fila"></span>
       <button id="abrirFila" class="btn pequeno" type="button">Abrir fila</button>
     </div>
+    <p id="avisoTroca" class="aviso-troca" hidden>
+      <span id="avisoTrocaTexto"></span>
+      <button id="cancelarTroca" class="btn pequeno" type="button">Cancelar</button>
+    </p>
 
 
     <section id="resultado" class="resultado" hidden>
@@ -71,6 +75,10 @@
           <p id="resumo" class="resumo"></p>
         </div>
       </div>
+      <figure id="previaFoto" class="previa-foto" hidden>
+        <img alt="Foto que vai para o Drive (toque para ampliar)"><figcaption></figcaption>
+        <button id="trocarFoto" class="btn pequeno" type="button">Tirar outra foto</button>
+      </figure>
 
       <div class="campo" id="campoCandidatos" hidden>
         <span>Na Liga Pokémon — toque na carta certa</span>
@@ -120,6 +128,11 @@
       <p id="historicoVazio" class="vazio">As cartas gravadas aparecem aqui.</p>
     </section>
   </main>
+
+  <div id="zoomFoto" class="zoom-foto" hidden role="dialog" aria-label="Foto ampliada">
+    <button id="fecharZoom" class="fechar-zoom" type="button" aria-label="Fechar">✕</button>
+    <div class="zoom-area"><img alt="Foto ampliada"></div>
+  </div>
 
   <main id="telaFila" hidden>
     <section class="fila">

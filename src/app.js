@@ -445,6 +445,13 @@ function montarCorpo(item) {
   resumo.className = 'resumo';
   resumo.textContent = [`Lido por: ${lido.lidoPor || 'OCR'}`, lido.avisoGemini, item.avisoImagem, item.erro && `Liga: ${item.erro}`].filter(Boolean).join(' · ');
   corpo.appendChild(resumo);
+  const fig = document.createElement('figure');
+  fig.className = 'previa-foto';
+  const btTroca = Object.assign(document.createElement('button'), { type: 'button', className: 'btn pequeno', textContent: 'Tirar outra foto' });
+  btTroca.addEventListener('click', () => pedirOutraFoto(item, true));
+  fig.append(Object.assign(document.createElement('img'), { alt: 'Foto que vai para o Drive (toque para ampliar)' }), document.createElement('figcaption'), btTroca);
+  corpo.appendChild(fig);
+  item.ui.atualizarPrevia = () => previaFoto(fig, item.canvas, item.form);
 
   // cartas da Liga
   const campoGrade = document.createElement('div');
@@ -466,6 +473,7 @@ function montarCorpo(item) {
     for (const el of grade.children) el.classList.toggle('ativo', el.dataset.id === (item.atual ? item.atual.id : ''));
     link.hidden = !item.atual;
     if (item.atual) link.href = linkLiga(item.atual.nomeLiga, { sigla: item.form.sigla, numero: item.atual.numero });
+    previaFoto(fig, item.canvas, item.form);
     desenharItem(item);
   };
   const escolher = (c) => {
@@ -614,6 +622,7 @@ async function tirarFoto({ automatica = false } = {}) {
     m.classList.remove('disparou'); void m.offsetWidth; m.classList.add('disparou');
     navigator.vibrate?.(25);
     const canvas = await camera.capturar($('video'));
+    if (trocandoFoto) return trocarFoto(canvas);
     await (cfg.modoFila ? processar(canvas, { automatica }) : (processar(canvas, { automatica }), null));
   } catch (e) {
     avisar(e.message, 'erro');
@@ -625,7 +634,7 @@ async function tirarFoto({ automatica = false } = {}) {
 function vigiarMoldura() {
   setInterval(() => {
     const m = $('moldura');
-    const livre = cfg.fotoAutomatica && camera.ligada() && !$('telaScanner').hidden && !document.hidden && !fotografando
+    const livre = cfg.fotoAutomatica && !trocandoFoto && camera.ligada() && !$('telaScanner').hidden && !document.hidden && !fotografando
       && (cfg.modoFila || (!ocupado && !leitura)); // revisão aberta: não atropela
     if (!livre) { m.classList.remove('firme'); if (cfg.fotoAutomatica && leitura) $('dica').textContent = 'Foto automática: grave ou descarte a carta aberta'; return; }
     const q = camera.miniaturaDaMoldura($('video'), LARG_MINI, ALT_MINI);
@@ -767,6 +776,7 @@ function aplicarCandidato(c) {
 const siglaDigitada = () => $('sigla').value.trim().toUpperCase();
 const linkAtual = () => (leitura?.atual ? linkLiga(leitura.atual.nomeLiga, { sigla: siglaDigitada(), numero: leitura.atual.numero }) : '');
 function atualizarLink() {
+  atualizarPreviaFoto();
   const link = $('linkLiga');
   link.hidden = !leitura?.atual;
   if (leitura?.atual) link.href = linkAtual();
@@ -914,6 +924,69 @@ async function resolverAba(token, id) {
 // No app instalado, o login sai da página; a carta fica pendente e é enviada na volta.
 // Com "Salvar foto no Drive" ligado, o mesmo login já libera o Drive (assim a foto sobe sem pedir login de novo).
 const querFoto = () => cfg.salvarFoto && !!idDaPasta(cfg.pastaDrive);
+
+// Prévia da foto que vai para o Drive (a carta com a margem, camera.js), com o nome do arquivo pelos campos atuais.
+// Só aparece com "Fotos no Drive" ligado.
+function previaFoto(fig, canvas, campos) {
+  fig.hidden = !querFoto() || !canvas;
+  if (fig.hidden) return;
+  const fonte = canvas.fotoComMargem || canvas;
+  fonte.urlPrevia ??= fonte.toDataURL('image/jpeg', 0.85);
+  const img = fig.querySelector('img');
+  if (img.src !== fonte.urlPrevia) img.src = fonte.urlPrevia;
+  img.onclick = () => ampliarFoto(fonte.urlPrevia);
+  const nome = String(campos.nome ?? '').trim(), numero = String(campos.numero ?? '').trim(), total = String(campos.total ?? '').trim();
+  fig.querySelector('figcaption').textContent = `Foto para o Drive: ${nomeDaFoto(nome || numero ? formatarCarta({ nome, numero, total }) : '')}`;
+}
+// Foto em tela cheia; um toque na foto alterna entre caber na tela e ampliada (com rolagem).
+function ampliarFoto(url) {
+  const z = $('zoomFoto');
+  z.querySelector('img').src = url;
+  z.classList.remove('ampliada');
+  z.hidden = false;
+}
+
+// "Tirar outra foto": a próxima foto (câmera ou galeria) troca só a imagem da carta (a da prévia e a do Drive);
+// nome, número, carta escolhida e o resto continuam como estão. Na fila, volta para a carta depois.
+let trocandoFoto = null; // { alvo: leitura ou item da fila, fila: boolean }
+function pedirOutraFoto(alvo, naFila) {
+  trocandoFoto = { alvo, fila: naFila };
+  const nome = (naFila ? alvo.form?.nome : $('nome').value) || 'esta carta';
+  $('avisoTrocaTexto').textContent = `Tire a foto nova de ${nome} (só a foto será trocada).`;
+  $('avisoTroca').hidden = false;
+  if (naFila) voltarAEscanear();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function cancelarTroca() {
+  const t = trocandoFoto;
+  trocandoFoto = null;
+  $('avisoTroca').hidden = true;
+  if (t?.fila && fila.includes(t.alvo)) voltarParaItem(t.alvo);
+}
+function voltarParaItem(item) {
+  abrirFila();
+  if (item.el) { item.el.open = true; item.el.scrollIntoView({ block: 'start' }); }
+}
+function trocarFoto(canvas) {
+  const { alvo, fila: naFila } = trocandoFoto;
+  trocandoFoto = null;
+  $('avisoTroca').hidden = true;
+  alvo.canvas = canvas;
+  if (naFila) {
+    if (!fila.includes(alvo)) return avisar('A carta saiu da fila antes da foto nova.', 'erro');
+    alvo.ui?.atualizarPrevia?.();
+    voltarParaItem(alvo);
+  } else {
+    if (leitura !== alvo) return avisar('A carta foi fechada antes da foto nova.', 'erro');
+    $('miniatura').getContext('2d').drawImage(canvas, 0, 0, $('miniatura').width, $('miniatura').height);
+    atualizarPreviaFoto();
+    $('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  avisar('Foto trocada');
+}
+
+const atualizarPreviaFoto = () => previaFoto($('previaFoto'), leitura?.canvas,
+  { nome: $('nome').value, numero: $('numero').value, total: $('total').value });
 const temFotoPendente = () => historico.some((h) => h.foto?.situacao === 'pendente');
 const tokenParaGravar = () => conta.obterToken(cfg.clienteId, { depois: 'reenviar', drive: querFoto() || temFotoPendente() });
 
@@ -1170,6 +1243,10 @@ function iniciar() {
   $('arquivo').addEventListener('change', async (ev) => {
     const arquivos = [...(ev.target.files || [])];
     ev.target.value = '';
+    if (trocandoFoto && arquivos[0]) {
+      try { trocarFoto(await camera.deArquivo(arquivos[0])); } catch { avisar('Não consegui abrir a foto.', 'erro'); }
+      return;
+    }
     for (const f of cfg.modoFila ? arquivos : arquivos.slice(0, 1)) {
       try {
         processar(await camera.deArquivo(f));
@@ -1182,6 +1259,12 @@ function iniciar() {
   $('buscarDeNovo').addEventListener('click', buscarDeNovo);
   $('salvar').addEventListener('click', salvar);
   $('sigla').addEventListener('input', atualizarLink);
+  for (const id of ['nome', 'numero', 'total']) $(id).addEventListener('input', atualizarPreviaFoto);
+  $('trocarFoto').addEventListener('click', () => leitura && pedirOutraFoto(leitura, false));
+  $('cancelarTroca').addEventListener('click', cancelarTroca);
+  $('zoomFoto').querySelector('img').addEventListener('click', () => $('zoomFoto').classList.toggle('ampliada'));
+  $('fecharZoom').addEventListener('click', () => { $('zoomFoto').hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('zoomFoto').hidden = true; });
   $('reenviar').addEventListener('click', reenviar);
   $('descartarPendentes').addEventListener('click', descartarPendentes);
 
