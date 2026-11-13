@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizarLeitura } from '../src/visao.js';
+import { normalizarLeitura, nomeDaEnergiaBasica } from '../src/visao.js';
 
 test('resposta do Gemini vira o mesmo formato da leitura do OCR', () => {
   const l = normalizarLeitura({ nome: 'Slowbro', numero: '090', total: '084', sigla: 'pbl', idioma: 'PT' }, 'm');
@@ -132,6 +132,78 @@ test('lerComGemini tenta de novo em erro temporário e só então desiste', asyn
     assert.equal(n, 3);
     n = -100; // sempre falha
     await assert.rejects(lerComGemini(canvas, { proxy: 'p', token: 't', esperas: [1, 1] }), /sobrecarregado/);
+  } finally {
+    globalThis.fetch = original;
+    delete globalThis.document;
+  }
+});
+
+test('Energia Básica vira o nome da Liga pelo tipo ("Grass Energy") e ignora a sigla do lote de energias', () => {
+  const l = normalizarLeitura({ nome: 'Energia Básica', nomeIngles: 'Basic Energy', numero: '001', total: '', sigla: 'MEE', idioma: 'PT', energia: 'Grass' });
+  assert.equal(l.nome, 'Grass Energy');
+  assert.equal(l.nomeImpresso, 'Energia Básica');
+  assert.equal(l.energiaBasica, true);
+  assert.deepEqual(l.siglas, []);
+  assert.deepEqual(l.numeros, [{ numero: '001', total: '' }]);
+  // intermediário antigo, sem o campo energia: o tipo vem do nome em inglês ou do nome impresso
+  assert.equal(nomeDaEnergiaBasica({ nome: 'Energia Básica', nomeIngles: 'Basic Grass Energy' }), 'Grass Energy');
+  assert.equal(nomeDaEnergiaBasica({ nome: 'Energia de Água Básica' }), 'Water Energy');
+  assert.equal(nomeDaEnergiaBasica({ nome: '基本超エネルギー', nomeIngles: 'Basic Psychic Energy' }), 'Psychic Energy');
+  assert.equal(nomeDaEnergiaBasica({ nome: 'Energia Básica', energia: 'Darkness' }), 'Darkness Energy');
+  // sem o tipo, não dá para buscar pelo nome da Liga: fica o nome lido
+  assert.equal(nomeDaEnergiaBasica({ nome: 'Energia Básica' }), '');
+  // energias especiais e outras cartas seguem normais
+  assert.equal(nomeDaEnergiaBasica({ nome: 'Energia Dupla Turbo', nomeIngles: 'Double Turbo Energy', energia: '' }), '');
+  assert.equal(nomeDaEnergiaBasica({ nome: 'Slowbro', nomeIngles: 'Slowbro', energia: '' }), '');
+  assert.equal(normalizarLeitura({ nome: 'Slowbro', sigla: 'PBL', energia: '' }).energiaBasica, false);
+});
+
+test('Apps Script: compara a foto com as imagens da Liga e devolve a opção escolhida', () => {
+  const chamadas = [];
+  const resposta = (c, corpo) => ({ getResponseCode: () => c, getContentText: () => JSON.stringify(corpo) });
+  const globais = {
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => PROPS[k] ?? null }) },
+    UrlFetchApp: {
+      fetch: (url, op) => {
+        chamadas.push({ url, op });
+        if (url.includes('tokeninfo')) return resposta(200, { aud: PROPS.CLIENT_ID });
+        if (url.includes('sbrauble')) return { getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/jpeg', getBytes: () => [1, 2, 3] }) };
+        return resposta(200, { candidates: [{ content: { parts: [{ text: '{"opcao": 2, "confianca": "alta", "motivo": "selo dentro da arte"}' }] } }] });
+      },
+    },
+    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ texto: t, setMimeType() { return this; } }) },
+    Utilities: { sleep: () => {}, base64Encode: (b) => `b64:${b.length}` },
+  };
+  const codigo = readFileSync(new URL('../proxy/AppsScript_imagens.gs', import.meta.url), 'utf8');
+  const { doPost } = new Function(...Object.keys(globais), `${codigo}\nreturn { doPost };`)(...Object.values(globais));
+  const post = (corpo) => JSON.parse(doPost({ postData: { contents: JSON.stringify(corpo) } }).texto);
+  const opcoes = ['https://repositorio.sbrauble.com/a.jpg', 'https://repositorio.sbrauble.com/b.jpg'];
+  const r = post({ acao: 'compararCartas', token: 't', imagem: 'FOTO', opcoes });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.resposta, { opcao: 2, confianca: 'alta', motivo: 'selo dentro da arte' });
+  const partes = JSON.parse(chamadas.find((c) => c.url.includes(':generateContent')).op.payload).contents[0].parts;
+  assert.equal(partes.filter((p) => p.inlineData).length, 3, 'a foto e as duas opções');
+  assert.equal(partes[1].inlineData.data, 'FOTO');
+  // só imagens da Liga e ao menos duas opções
+  assert.match(post({ acao: 'compararCartas', token: 't', imagem: 'F', opcoes: ['https://exemplo.com/x.jpg', opcoes[0]] }).erro, /não permitido/);
+  assert.match(post({ acao: 'compararCartas', token: 't', imagem: 'F', opcoes: [opcoes[0]] }).erro, /duas opções/);
+});
+
+test('compararComGemini devolve o índice da opção (−1 se nenhuma)', async () => {
+  const { compararComGemini } = await import('../src/visao.js');
+  const original = globalThis.fetch;
+  globalThis.document = { createElement: () => ({}) };
+  const canvas = { width: 10, height: 14, toDataURL: () => 'data:image/jpeg;base64,AAAA' };
+  let corpo, opcao = 2;
+  globalThis.fetch = async (_, op) => { corpo = JSON.parse(op.body); return { ok: true, status: 200, json: async () => ({ ok: true, resposta: { opcao, confianca: 'alta', motivo: 'm' } }) }; };
+  try {
+    const opcoes = [{ imagem: 'https://x/1.jpg' }, { imagem: 'https://x/2.jpg' }, { imagem: 'https://x/3.jpg' }];
+    const r = await compararComGemini(canvas, opcoes, { proxy: 'p', token: 't' });
+    assert.equal(r.indice, 1);
+    assert.equal(corpo.acao, 'compararCartas');
+    assert.deepEqual(corpo.opcoes, ['https://x/1.jpg', 'https://x/2.jpg', 'https://x/3.jpg']);
+    opcao = 0;
+    assert.equal((await compararComGemini(canvas, opcoes, { proxy: 'p', token: 't' })).indice, -1);
   } finally {
     globalThis.fetch = original;
     delete globalThis.document;

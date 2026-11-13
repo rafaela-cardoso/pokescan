@@ -7,12 +7,12 @@
 import { PADRAO, ESTADOS } from './config.js';
 import * as camera from './camera.js';
 import { lerCarta, lerIdioma, aquecer } from './ocr.js';
-import { lerComGemini } from './visao.js';
+import { lerComGemini, compararComGemini, MAXIMO_OPCOES } from './visao.js';
 import { novoDetector, LARGURA as LARG_MINI, ALTURA as ALT_MINI } from './automatico.js';
 import { descobrirIdiomas, filtrarPorIdiomaDaEdicao, confirmarIdiomaDaEdicao, idiomaConhecido } from './edicoes.js';
 import { detectarExtra } from './extras.js';
 import {
-  buscarCandidatos, linkLiga, EXTRAS, filtrarPorNome, filtrarPorIdioma, filtrarPorTotal, filtrarPorSigla, siglaParaLink,
+  buscarCandidatos, linkLiga, EXTRAS, filtrarPorNome, filtrarPorIdioma, filtrarPorTotal, filtrarPorSigla, siglaParaLink, nomeBate,
 } from './liga.js';
 import { formatarCarta, numeroCatalogo } from './carta.js';
 import { NOMES_IDIOMA } from './idioma.js';
@@ -255,6 +255,7 @@ async function revisar(canvas, lido) {
   $('lendoMsg').textContent = 'Procurando na Liga Pokémon…';
   leitura = { lido, candidatos: [], escolha: null, erro: '', canvas };
   await consultarLiga(lido);
+  await desempatarPelaImagem(leitura, canvas);
   mostrarResultado();
   verificarEdicoes(leitura); // em segundo plano: lê o idioma das edições sugeridas
   if (cfg.salvarDireto && leitura.confiavel) await salvar();
@@ -326,6 +327,7 @@ async function lerFila() {
       item.estado = 'buscando';
       desenharItem(item);
       await consultarLiga(item.lido, item);
+      await desempatarPelaImagem(item, item.canvas);
       iniciarFormulario(item);
       item.estado = 'pronta';
       item.selecionada = !!item.atual; // já marcada quando a carta da Liga foi escolhida
@@ -441,7 +443,7 @@ function montarCorpo(item) {
 
   const resumo = document.createElement('p');
   resumo.className = 'resumo';
-  resumo.textContent = [`Lido por: ${lido.lidoPor || 'OCR'}`, lido.avisoGemini, item.erro && `Liga: ${item.erro}`].filter(Boolean).join(' · ');
+  resumo.textContent = [`Lido por: ${lido.lidoPor || 'OCR'}`, lido.avisoGemini, item.avisoImagem, item.erro && `Liga: ${item.erro}`].filter(Boolean).join(' · ');
   corpo.appendChild(resumo);
 
   // cartas da Liga
@@ -639,6 +641,7 @@ function vigiarMoldura() {
 // Busca na Liga com as leituras do número (até 2) e escolhe o candidato, se a nota permitir.
 async function consultarLiga(lido, alvo = leitura) {
   const vistos = new Map();
+  alvo.avisoImagem = '';
   const leiturasNumero = lido.numeros?.length ? lido.numeros : [{ numero: lido.numero, total: lido.total }];
   try {
     for (const n of leiturasNumero.slice(0, 2)) {
@@ -670,6 +673,37 @@ async function consultarLiga(lido, alvo = leitura) {
   alvo.escolha = a && a.nota >= 0.6 && folga >= 0.05 ? a : null;
   // sem nome legível só o número sustenta a escolha: sempre pede conferência
   alvo.confiavel = !!(a && a.nota >= CONFIANCA_ALTA && folga >= 0.1 && (lido.qualidadeNome ?? 1) >= 0.5);
+}
+
+// Cartas com o mesmo nome e número que só a imagem separa: energias básicas ("Grass Energy (001/086)", "(001/90)",
+// "(001/∞)": cada Prize Pack tem a sua) e reimpressões. Só para a leitura do Gemini, e só se a escolha automática
+// não for uma carta de fora desse grupo.
+function empatadas(alvo) {
+  const { lido } = alvo;
+  if (lido.lidoPor !== 'Gemini') return [];
+  const exato = numeroExato(lido);
+  const grupo = alvo.candidatos.filter((c) => c.imagem && exato(c) && nomeBate(c, lido.nome));
+  if (grupo.length < 2 || (alvo.escolha && !grupo.includes(alvo.escolha))) return [];
+  return grupo.slice(0, MAXIMO_OPCOES);
+}
+
+// O Gemini compara a foto com as imagens da Liga dessas cartas e escolhe uma (você ainda confere antes de gravar).
+async function desempatarPelaImagem(alvo, canvas) {
+  const opcoes = empatadas(alvo);
+  if (!opcoes.length || !cfg.proxyImagens || !conta.conectado(cfg.clienteId)) return;
+  if (alvo === leitura) $('lendoMsg').textContent = `Comparando a foto com ${opcoes.length} cartas da Liga…`;
+  try {
+    const r = await compararComGemini(canvas, opcoes, { proxy: cfg.proxyImagens, token: await conta.obterToken(cfg.clienteId) });
+    if (r.indice < 0) { alvo.avisoImagem = 'Gemini: nenhuma imagem da Liga bateu com a foto'; return; }
+    const c = opcoes[r.indice];
+    alvo.escolha = c;
+    alvo.candidatos = [c, ...alvo.candidatos.filter((x) => x !== c)];
+    alvo.avisoImagem = `Escolhida pela imagem (Gemini, confiança ${r.confianca || '?'}${r.motivo ? `: ${r.motivo}` : ''})`;
+  } catch (e) {
+    if (e.login) conta.invalidar();
+    const antigo = /desconhecida/i.test(e.message) ? ' (publique a nova versão do Apps Script)' : '';
+    alvo.avisoImagem = `Não comparei as imagens: ${e.message}${antigo}`;
+  }
 }
 
 // Carta da Liga com o número (e o total, se lido) igual ao da leitura: o palpite de idioma da edição não a esconde.
@@ -796,6 +830,7 @@ function mostrarResumo() {
   if (lido.siglas?.length) partes.push(`Coleção lida: ${lido.siglas.join(' ou ')}`);
   partes.push(`Lido por: ${lido.lidoPor || 'OCR'}`);
   if (lido.avisoGemini) partes.push(lido.avisoGemini);
+  if (leitura.avisoImagem) partes.push(leitura.avisoImagem);
   partes.push(`Idioma: ${NOMES_IDIOMA[lido.idioma] || 'não identificado'}`);
   if (lido.extraDetectado) partes.push(`Extra ${lido.extraFonte === 'Gemini' ? 'pelo Gemini' : 'pela imagem'}: ${lido.extraDetectado} (confira)`);
   else if (lido.extraFonte === 'Gemini') partes.push('Extra pelo Gemini: Normal (confira)');
@@ -907,7 +942,8 @@ const fotosGuardando = new Map(); // id -> promessa de guardar a foto no celular
 function prepararFoto(registro, canvas) {
   if (!querFoto() || !canvas) return null;
   const id = `foto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const guardando = fotoEmJpeg(canvas).then((img) => guardarFoto(id, img));
+  // a foto com margem em volta da carta (camera.js); o recorte justo é só para a leitura
+  const guardando = fotoEmJpeg(canvas.fotoComMargem || canvas).then((img) => guardarFoto(id, img));
   fotosGuardando.set(id, guardando);
   conta.esperarAntesDeSair(guardando);
   return { id, nome: nomeDaFoto(registro.carta), situacao: 'pendente' };

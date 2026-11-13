@@ -127,6 +127,15 @@ Com a leitura do Gemini, a busca na Liga usa o nome e o número exatamente como 
 consultas). Para cartas em japonês, coreano ou chinês, o Gemini também devolve o nome em inglês, que é o usado na
 busca; as versões com sufixo no número ("030C/103") e os Gem Packs chineses ("1004-04/140") também são achados.
 
+**Energias básicas.** A carta diz só "Energia Básica" (o tipo vem no símbolo), mas a Liga a chama pelo tipo:
+"Energia de Grama" / "Grass Energy". O Gemini devolve o tipo, e a busca usa "Grass Energy (001/". A sigla impressa
+nessas energias ("MEE") é a do lote de energias, não a edição da Liga, e por isso é ignorada.
+
+**Desempate pela imagem.** Quando várias cartas da Liga têm o mesmo nome e número (cada Prize Pack tem a sua Energia
+de Grama 001, e às vezes só muda a posição do selo do Play! Pokémon), o app manda ao Gemini a foto e as imagens da
+Liga dessas cartas (até 8, num pedido só), e ele escolhe a mesma impressão. A carta escolhida vem marcada para você
+conferir, com o motivo no resumo. Isso precisa da versão do intermediário com a ação `compararCartas`.
+
 Se o Gemini responder que está sobrecarregado (503), o intermediário tenta de novo duas vezes, troca de modelo e,
 se ainda assim falhar, o app espera e tenta mais duas vezes; o OCR só lê em último caso.
 
@@ -135,7 +144,7 @@ Os limites da cota grátis (pedidos por minuto e por dia) aparecem em
 
 ## Fotos no Drive
 
-Com **Configurar → Fotos no Drive** ligado, cada carta gravada também tem a foto (o recorte da carta) salva na pasta
+Com **Configurar → Fotos no Drive** ligado, cada carta gravada também tem a foto (a carta com uma margem de fundo em volta, sem cortar rente às bordas) salva na pasta
 do Drive informada, com o nome da coluna Carta e `-` no lugar de `/`: `Gabite da Cíntia (110-217).jpg`. O login
 pede o acesso ao Drive (escopo do Drive inteiro: o restrito não permite gravar numa pasta que o app não criou).
 Se a foto não subir, ela fica guardada no celular e vai com **Enviar pendentes**. Na publicação, o link da pasta
