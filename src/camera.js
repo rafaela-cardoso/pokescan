@@ -86,12 +86,12 @@ export function posicionarMoldura(video, moldura) {
 // recorte justo; a foto guardada fica com um respiro de fundo, sem cortar rente às bordas.
 export const MARGEM_FOTO = 0.1;
 
-// Área com margem em volta do recorte da carta, sem passar dos limites da imagem de origem.
+// Área com margem em volta do recorte da carta, sem passar dos limites da imagem de origem. A margem é a mesma dos
+// dois lados (a carta fica no centro da foto): se de um lado falta fundo, o outro usa a mesma margem menor.
 export function areaComMargem(sx, sy, sw, sh, larguraOrigem, alturaOrigem, margem = MARGEM_FOTO) {
-  const mx = sw * margem, my = sh * margem;
-  const x0 = Math.max(0, sx - mx), y0 = Math.max(0, sy - my);
-  const x1 = Math.min(larguraOrigem, sx + sw + mx), y1 = Math.min(alturaOrigem, sy + sh + my);
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  const mx = Math.max(0, Math.min(sw * margem, sx, larguraOrigem - (sx + sw)));
+  const my = Math.max(0, Math.min(sh * margem, sy, alturaOrigem - (sy + sh)));
+  return { x: sx - mx, y: sy - my, w: sw + 2 * mx, h: sh + 2 * my };
 }
 
 function canvasCarta(origem, sx, sy, sw, sh) {

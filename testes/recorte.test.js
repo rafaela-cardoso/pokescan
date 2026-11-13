@@ -46,14 +46,11 @@ test('sem carta (só fundo): nada é recortado', () => {
   assert.equal(recortarDoFundo(img), null);
 });
 
-test('foto do Drive: margem em volta da carta, sem passar dos limites da imagem', async () => {
+test('foto do Drive: margem igual em volta da carta (centralizada), sem passar dos limites da imagem', async () => {
   const { areaComMargem } = await import('../src/camera.js');
   // carta no meio de uma foto 1000x1400: 10% de cada lado
   assert.deepEqual(areaComMargem(200, 300, 630, 880, 1000, 1400, 0.1), { x: 137, y: 212, w: 756, h: 1056 });
-  // carta encostada no canto: a margem para na borda da foto
-  const a = areaComMargem(0, 0, 630, 880, 700, 900, 0.1);
-  assert.equal(a.x, 0);
-  assert.equal(a.y, 0);
-  assert.equal(a.w, 693);
-  assert.equal(a.h, 900);
+  // carta perto da borda: a margem é a mesma dos dois lados (carta no centro), limitada pelo lado mais curto
+  assert.deepEqual(areaComMargem(20, 0, 630, 880, 1000, 1400, 0.1), { x: 0, y: 0, w: 670, h: 880 });
+  assert.deepEqual(areaComMargem(300, 400, 630, 880, 1000, 1400, 0.1), { x: 237, y: 312, w: 756, h: 1056 });
 });

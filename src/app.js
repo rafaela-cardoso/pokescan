@@ -1160,14 +1160,23 @@ function iniciar() {
   $('limparGravadas').addEventListener('click', limparGravadas);
   for (const [id, chave] of [['fotoAutomatica', 'fotoAutomatica'], ['modoFila', 'modoFila']]) {
     $(id).checked = !!cfg[chave];
-    $(id).addEventListener('change', () => { cfg[chave] = $(id).checked; salvarCfg(); mostrarFila(); });
+    $(id).addEventListener('change', () => { cfg[chave] = $(id).checked; salvarCfg(); mostrarFila(); galeriaMultipla(); });
   }
   vigiarMoldura();
   mostrarFila();
+  // no modo fila, a galeria deixa escolher várias fotos de uma vez: cada uma entra na fila
+  const galeriaMultipla = () => { $('arquivo').multiple = !!cfg.modoFila; };
+  galeriaMultipla();
   $('arquivo').addEventListener('change', async (ev) => {
-    const f = ev.target.files?.[0];
+    const arquivos = [...(ev.target.files || [])];
     ev.target.value = '';
-    if (f) processar(await camera.deArquivo(f));
+    for (const f of cfg.modoFila ? arquivos : arquivos.slice(0, 1)) {
+      try {
+        processar(await camera.deArquivo(f));
+      } catch {
+        avisar(`Não consegui abrir a foto ${f.name}.`, 'erro');
+      }
+    }
   });
   $('descartar').addEventListener('click', descartar);
   $('buscarDeNovo').addEventListener('click', buscarDeNovo);
