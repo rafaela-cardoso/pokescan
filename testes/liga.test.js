@@ -248,3 +248,12 @@ test('Gem Pack chinês: "1004-04/140" na Liga é "1004/04" impresso; nome só no
   assert.ok(nomeBate(c, 'Penny'), 'nome sem o "(Illustration Rare)"');
   assert.ok(pontuar(c, { nome: 'Penny', numero: '1004', total: '04' }) > 0.9);
 });
+
+test('energia básica: busca "Grass Energy (001/" e as energias de cada Prize Pack batem com o nome', () => {
+  assert.deepEqual(consultasExatas({ nome: 'Grass Energy', numero: '001', total: '', idioma: 'PT' }), ['Grass Energy (001/', 'Grass Energy (001']);
+  const c = converter({ __key: 'marketplace:cards:tcg2:5154|807|001', sNomeIdiomaPrincipal: 'Energia de Grama (001/∞)', sNomeIdiomaSecundario: 'Grass Energy (001/∞)', sPathImage: '//repositorio.sbrauble.com/x.jpg' });
+  assert.equal(c.nome, 'Energia de Grama');
+  assert.equal(c.numero, '001');
+  assert.equal(c.sigla, 'PPPS9');
+  assert.ok(nomeBate(c, 'Grass Energy'));
+});

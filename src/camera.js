@@ -82,6 +82,18 @@ export function posicionarMoldura(video, moldura) {
   });
 }
 
+// Margem em volta da carta na foto que vai para o Drive (fração do tamanho da carta, em cada lado). A leitura usa o
+// recorte justo; a foto guardada fica com um respiro de fundo, sem cortar rente às bordas.
+export const MARGEM_FOTO = 0.2;
+
+// Área com margem em volta do recorte da carta, sem passar dos limites da imagem de origem. A margem é a mesma dos
+// dois lados (a carta fica no centro da foto): se de um lado falta fundo, o outro usa a mesma margem menor.
+export function areaComMargem(sx, sy, sw, sh, larguraOrigem, alturaOrigem, margem = MARGEM_FOTO) {
+  const mx = Math.max(0, Math.min(sw * margem, sx, larguraOrigem - (sx + sw)));
+  const my = Math.max(0, Math.min(sh * margem, sy, alturaOrigem - (sy + sh)));
+  return { x: sx - mx, y: sy - my, w: sw + 2 * mx, h: sh + 2 * my };
+}
+
 function canvasCarta(origem, sx, sy, sw, sh) {
   const c = document.createElement('canvas');
   c.height = Math.min(ALTURA_SAIDA, Math.max(sh, 900));
@@ -89,6 +101,16 @@ function canvasCarta(origem, sx, sy, sw, sh) {
   const ctx = c.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(origem, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  // a mesma carta com margem, na mesma escala, para a foto do Drive
+  const a = areaComMargem(sx, sy, sw, sh, origem.videoWidth || origem.width, origem.videoHeight || origem.height);
+  const k = c.height / sh;
+  const f = document.createElement('canvas');
+  f.width = Math.round(a.w * k);
+  f.height = Math.round(a.h * k);
+  const fctx = f.getContext('2d');
+  fctx.imageSmoothingQuality = 'high';
+  fctx.drawImage(origem, a.x, a.y, a.w, a.h, 0, 0, f.width, f.height);
+  c.fotoComMargem = f;
   return c;
 }
 
