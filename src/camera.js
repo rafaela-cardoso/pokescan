@@ -84,7 +84,7 @@ export function posicionarMoldura(video, moldura) {
 
 // Margem em volta da carta na foto que vai para o Drive (fração do tamanho da carta, em cada lado). A leitura usa o
 // recorte justo; a foto guardada fica com um respiro de fundo, sem cortar rente às bordas.
-export const MARGEM_FOTO = 0.1;
+export const MARGEM_FOTO = 0.2;
 
 // Área com margem em volta do recorte da carta, sem passar dos limites da imagem de origem. A margem é a mesma dos
 // dois lados (a carta fica no centro da foto): se de um lado falta fundo, o outro usa a mesma margem menor.
